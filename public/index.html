@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="bn">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f8f7ff">
+  <meta name="description" content="ARS Store — digital subscription storefront.">
+  <title>Gemini AI Pro | ARS Store</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <div class="announcement">⚡ ডিজিটাল সাবস্ক্রিপশন · দ্রুত অর্ডার প্রসেসিং · Binance Pay</div>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="ARS Store home">
+      <span class="brand-mark">ARS</span>
+      <span class="brand-copy"><strong>ARS STORE <span class="bd-badge">BD</span></strong><small><span class="shield">✓</span> Digital Subscription Store</small></span>
+    </a>
+    <nav class="header-nav" aria-label="Main navigation">
+      <a href="#features">ফিচার</a>
+      <a href="#how-it-works">কীভাবে কিনবেন</a>
+      <a href="#support">সাপোর্ট</a>
+    </nav>
+    <div class="header-actions">
+      <a id="loginButton" class="button button-light button-small" href="/auth/google"><span class="google-g">G</span> Google দিয়ে লগইন</a>
+      <div id="accountArea" class="account-area" hidden>
+        <img id="userAvatar" class="avatar" alt="" hidden>
+        <span id="userName" class="account-name"></span>
+        <button id="logoutButton" class="text-button" type="button">লগআউট</button>
+      </div>
+      <button id="menuButton" class="menu-button" type="button" aria-label="মেনু খুলুন" aria-expanded="false">☰</button>
+    </div>
+  </header>
+
+  <main class="page-shell">
+    <div id="notice" class="notice" role="status" hidden></div>
+
+    <div class="back-link"><span aria-hidden="true">←</span> ডিজিটাল সাবস্ক্রিপশন</div>
+
+    <section class="product-layout" aria-labelledby="product-title">
+      <article class="product-card">
+        <div class="product-top">
+          <div class="gemini-icon" aria-hidden="true">
+            <svg viewBox="0 0 100 100" role="img">
+              <defs><linearGradient id="geminiGradient" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#3b82f6"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs>
+              <path fill="url(#geminiGradient)" d="M50 4C55 27 69 41 96 50 69 57 56 72 50 96 43 71 28 57 4 50 29 43 43 28 50 4Z"/>
+            </svg>
+          </div>
+          <div class="product-heading">
+            <div class="badges">
+              <span class="badge badge-purple">AI Subscription</span>
+              <span class="badge badge-green"><span class="dot"></span> Digital delivery</span>
+              <span class="badge badge-amber">★ Popular</span>
+            </div>
+            <h1 id="product-title">Gemini AI Pro</h1>
+            <p class="product-subtitle">AI for coding, research, writing and everyday work</p>
+            <p class="validity"><span class="clock-icon">◷</span> <span id="durationText">18 মাসের মেয়াদ</span></p>
+          </div>
+        </div>
+
+        <div class="checkout-panel">
+          <div class="price-row">
+            <div>
+              <span class="eyebrow">মূল্য / PRICE</span>
+              <div class="price"><span id="price">৳350</span> <del id="oldPrice">৳1,500</del></div>
+            </div>
+            <span class="badge badge-green">⚡ Binance Pay</span>
+          </div>
+          <p class="checkout-note">পেমেন্ট Binance-এর নিরাপদ checkout পেজে সম্পন্ন হবে।</p>
+          <button class="button button-primary buy-button" id="buyButton" type="button">
+            <span class="bag-icon">▣</span> অর্ডার করুন — Binance Pay <span class="button-arrow">→</span>
+          </button>
+          <button class="button button-outline buy-button" id="mobileBuyTop" type="button">
+            <span class="chat-icon">◌</span> অর্ডার / প্রশ্ন
+          </button>
+        </div>
+
+        <div class="section-divider"></div>
+        <section class="content-section">
+          <h2><span class="section-icon">▤</span> Product Description</h2>
+          <p>Gemini AI Pro-র জন্য একটি ডিজিটাল সাবস্ক্রিপশন অফার। প্ল্যানের ফিচার, যোগ্যতা, অঞ্চলভিত্তিক সীমাবদ্ধতা ও অ্যাক্টিভেশন পদ্ধতি আপনার কেনা বৈধ অফারের শর্তের ওপর নির্ভর করবে।</p>
+        </section>
+
+        <div class="section-divider"></div>
+        <section class="content-section" id="features">
+          <h2><span class="section-icon">ϟ</span> Key Features & Benefits</h2>
+          <ul class="feature-list">
+            <li><span class="check">✓</span><span><strong>AI Assistant</strong><small>কোডিং, রিসার্চ, লেখালেখি ও দৈনন্দিন কাজ</small></span></li>
+            <li><span class="check">✓</span><span><strong>Creative Tools</strong><small>আপনার কেনা প্ল্যানে অন্তর্ভুক্ত থাকলে ছবি/ভিডিও ফিচার</small></span></li>
+            <li><span class="check">✓</span><span><strong>Personal Email</strong><small>অ্যাক্টিভেশন পদ্ধতি প্ল্যানের নিয়ম অনুযায়ী</small></span></li>
+            <li><span class="check">✓</span><span><strong id="featureDuration">18 মাসের অফার</strong><small>অর্ডার করার আগে মেয়াদ ও শর্ত যাচাই করুন</small></span></li>
+          </ul>
+          <p class="small-disclaimer">নোট: Google-এর পাসওয়ার্ড কখনো দেবেন না। ARS Store Google-এর অফিসিয়াল ওয়েবসাইট নয় এবং Google-এর সঙ্গে অনুমোদিত সম্পর্ক দাবি করছে না।</p>
+        </section>
+      </article>
+
+      <aside class="trust-card" id="how-it-works">
+        <h2><span class="trust-shield">♢</span> কেন ARS Store?</h2>
+        <div class="trust-item">
+          <span class="trust-emoji">⚡</span>
+          <div><strong>Order tracking</strong><p>পেমেন্টের স্ট্যাটাস এই সাইটে যাচাই করা হবে।</p></div>
+        </div>
+        <div class="trust-item">
+          <span class="trust-emoji">🛡️</span>
+          <div><strong>Verified payment flow</strong><p>পেমেন্ট কনফার্মেশন Binance-এর signed webhook দিয়ে যাচাই করা হয়।</p></div>
+        </div>
+        <div class="trust-item">
+          <span class="trust-emoji">💬</span>
+          <div><strong>Customer support</strong><p>অর্ডার বা অ্যাক্টিভেশন নিয়ে সহায়তার জন্য সাপোর্ট লিংক ব্যবহার করুন।</p></div>
+        </div>
+        <div class="support-cta" id="support">
+          <p>অর্ডার দেওয়ার আগে প্রশ্ন আছে?</p>
+          <button id="supportButton" class="button button-whatsapp" type="button">◌ WhatsApp সাপোর্ট</button>
+          <small id="supportHint">সাপোর্ট লিংক সাইট অ্যাডমিন কনফিগার করবেন।</small>
+        </div>
+      </aside>
+    </section>
+
+    <section class="how-card">
+      <h2>কীভাবে অর্ডার করবেন?</h2>
+      <div class="steps">
+        <div class="step"><span>1</span><div><strong>Google দিয়ে লগইন</strong><p>আপনার verified email ব্যবহার করুন।</p></div></div>
+        <div class="step"><span>2</span><div><strong>নম্বর দিন</strong><p>WhatsApp / মোবাইল নম্বর দিয়ে checkout শুরু করুন।</p></div></div>
+        <div class="step"><span>3</span><div><strong>Binance Pay</strong><p>Binance checkout-এ পেমেন্ট সম্পন্ন করুন।</p></div></div>
+        <div class="step"><span>4</span><div><strong>অর্ডার যাচাই</strong><p>পেমেন্ট নিশ্চিত হলে ARS Store অর্ডার প্রসেস করবে।</p></div></div>
+      </div>
+    </section>
+
+    <footer class="site-footer">
+      <div class="footer-brand"><span class="brand-mark brand-mark-small">ARS</span><strong>ARS STORE</strong></div>
+      <p>ডিজিটাল পণ্যের বিক্রেতা। পণ্যের বৈধতা, প্রাপ্যতা ও ব্যবহার-শর্ত কেনার আগে যাচাই করুন।</p>
+      <div class="footer-links"><a href="#features">ফিচার</a><a href="#how-it-works">অর্ডার পদ্ধতি</a><a href="/admin">Admin</a></div>
+      <small>© <span id="year"></span> ARS Store. All rights reserved.</small>
+    </footer>
+  </main>
+
+  <div class="mobile-buy-bar">
+    <div><strong id="mobilePrice">৳350</strong><small id="mobileDuration">18 মাসের মেয়াদ</small></div>
+    <button class="button button-primary" id="mobileBuyButton" type="button">▣ অর্ডার করুন</button>
+  </div>
+
+  <dialog id="checkoutModal" class="checkout-modal">
+    <form id="checkoutForm" class="modal-card">
+      <button class="modal-close" id="closeModal" type="button" aria-label="বন্ধ করুন">×</button>
+      <span class="modal-kicker">ARS STORE CHECKOUT</span>
+      <h2>আপনার অর্ডার</h2>
+      <div class="modal-product-row">
+        <span class="mini-gemini">✦</span>
+        <div><strong>Gemini AI Pro</strong><small id="modalDuration">18 মাসের মেয়াদ</small></div>
+        <strong id="modalPrice">৳350</strong>
+      </div>
+      <div class="payment-method"><span class="binance-mark">B</span><span><strong>Binance Pay</strong><small id="paymentAmountLabel">Binance checkout-এ পেমেন্ট করুন</small></span><span class="selected-check">✓</span></div>
+      <label for="deliveryEmail">আপনার Google / Delivery Email</label>
+      <input id="deliveryEmail" type="email" readonly>
+      <p class="field-help">Google লগইন থেকে নেওয়া email। আপনার Google password চাওয়া হবে না।</p>
+      <label for="whatsapp">WhatsApp / মোবাইল নম্বর <span class="required">*</span></label>
+      <input id="whatsapp" name="whatsapp" type="tel" autocomplete="tel" placeholder="যেমন: +8801XXXXXXXXX" required minlength="8" maxlength="24">
+      <label for="orderNote">বিশেষ নির্দেশনা (ঐচ্ছিক)</label>
+      <textarea id="orderNote" name="note" rows="2" maxlength="500" placeholder="অর্ডার সম্পর্কে কোনো নোট থাকলে লিখুন"></textarea>
+      <p class="terms-note">অর্ডার করে আপনি নিশ্চিত করছেন যে পণ্যের বিবরণ ও শর্ত পড়েছেন। সাবস্ক্রিপশন অ্যাক্টিভেশন বিক্রেতার বৈধ সরবরাহ ও প্ল্যানের নিয়মের ওপর নির্ভর করে।</p>
+      <p id="checkoutStatus" class="form-status" role="status" hidden></p>
+      <button id="payButton" class="button button-primary modal-submit" type="submit">Binance Pay-এ এগিয়ে যান <span>→</span></button>
+      <button id="cancelCheckout" class="text-button cancel-link" type="button">বাতিল</button>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

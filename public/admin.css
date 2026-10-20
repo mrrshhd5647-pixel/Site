@@ -1,0 +1,26 @@
+.admin-shell { padding: 36px 0 80px; }
+.admin-card { background: white; border: 1px solid #eee3ff; border-radius: 25px; padding: clamp(20px, 4vw, 38px); box-shadow: var(--shadow); }
+.admin-card h1 { margin: 8px 0; font-size: 32px; }
+.admin-help { max-width: 680px; color: var(--muted); font-size: 13px; }
+.admin-login { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 10px; align-items: end; max-width: 700px; margin: 22px 0; }
+.admin-login label { grid-column: 1 / -1; font-size: 12px; font-weight: 800; }
+.admin-login input { width: 100%; border: 1px solid #dfe5f0; border-radius: 12px; padding: 13px; }
+.admin-login .button { min-height: 45px; }
+.admin-message { color: #6d28d9; font-size: 12px; min-height: 20px; }
+.admin-list-header { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 22px 0 12px; }
+.admin-list-header h2 { font-size: 18px; margin: 0; }
+.orders-list { display: grid; gap: 12px; }
+.order-card { border: 1px solid var(--line); border-radius: 16px; padding: 15px; display: grid; gap: 9px; }
+.order-head { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
+.order-head strong { overflow-wrap: anywhere; font-size: 13px; }
+.order-status { display: inline-flex; border-radius: 999px; background: #f2e8ff; color: #6b21a8; font-size: 10px; font-weight: 900; padding: 5px 9px; }
+.order-meta { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.order-note { color: #4b5563; background: #f8fafc; padding: 9px; border-radius: 9px; font-size: 11px; }
+.order-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.order-actions .button { min-height: 36px; padding: 8px 11px; font-size: 11px; }
+.order-actions .button:disabled { cursor: not-allowed; }
+@media (max-width: 560px) {
+  .admin-login { grid-template-columns: 1fr; }
+  .admin-login label { grid-column: auto; }
+  .order-head { flex-direction: column; }
+}

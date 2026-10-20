@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="bn">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <title>Admin Orders | ARS Store</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/admin.css">
+  <script src="/admin.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">ARS</span><span class="brand-copy"><strong>ARS STORE</strong><small>Admin orders</small></span></a>
+    <a class="button button-light button-small" href="/">স্টোর দেখুন</a>
+  </header>
+  <main class="page-shell admin-shell">
+    <section class="admin-card">
+      <p class="modal-kicker">PRIVATE ADMIN AREA</p>
+      <h1>অর্ডার ম্যানেজমেন্ট</h1>
+      <p class="admin-help">Admin token server-এর .env ফাইলে রাখা থাকবে। Token কখনো public JavaScript বা GitHub-এ রাখবেন না।</p>
+      <form id="adminLoginForm" class="admin-login">
+        <label for="adminToken">Admin token</label>
+        <input id="adminToken" type="password" autocomplete="current-password" required placeholder="ADMIN_TOKEN দিন">
+        <button class="button button-primary" type="submit">অর্ডার লোড করুন</button>
+      </form>
+      <p id="adminMessage" class="admin-message" role="status"></p>
+      <div id="ordersWrap" hidden>
+        <div class="admin-list-header"><h2>সাম্প্রতিক অর্ডার</h2><button id="reloadOrders" class="button button-light button-small" type="button">Refresh</button></div>
+        <div id="ordersList" class="orders-list"></div>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

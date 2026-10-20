@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="bn">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f8f7ff">
+  <title>অর্ডার স্ট্যাটাস | ARS Store</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/payment.js" defer></script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/"><span class="brand-mark">ARS</span><span class="brand-copy"><strong>ARS STORE</strong><small>Order status</small></span></a>
+    <a class="button button-light button-small" href="/">স্টোরে ফিরুন</a>
+  </header>
+  <main class="page-shell status-shell">
+    <section class="status-card">
+      <div id="statusIcon" class="status-icon">◷</div>
+      <p class="modal-kicker">ARS STORE · ORDER STATUS</p>
+      <h1 id="statusTitle">অর্ডার যাচাই হচ্ছে</h1>
+      <p id="statusMessage">Binance Pay-এর verified notification আসা পর্যন্ত অপেক্ষা করুন। এই পেজের redirect একা payment confirmation নয়।</p>
+      <div class="status-order">Order ID: <code id="orderId">—</code></div>
+      <div class="status-pill" id="statusPill">PENDING</div>
+      <button id="refreshStatus" class="button button-primary" type="button">স্ট্যাটাস আবার দেখুন</button>
+      <a class="status-back" href="/">ARS Store-এ ফিরে যান</a>
+    </section>
+  </main>
+</body>
+</html>
