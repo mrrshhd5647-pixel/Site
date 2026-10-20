@@ -41,3 +41,4 @@ body {
 .account-email { color: #fff; font-weight: 700; overflow-wrap: anywhere; }
 .auth-secondary-button { margin-top: 12px; width: 100%; border: 1px solid #38435e; border-radius: 11px; padding: 12px; background: transparent; color: #dbe3f5; font: inherit; cursor: pointer; }
 [hidden] { display: none !important; }
+.auth-message.is-info { color: #c4b5fd; }
