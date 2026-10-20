@@ -11,7 +11,6 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const Database = require('better-sqlite3');
 const { OAuth2Client } = require('google-auth-library');
-
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const APP_URL = (process.env.APP_URL || `http://localhost:${PORT}`).replace(/\/+$/, '');
@@ -21,7 +20,6 @@ const DB_PATH = path.resolve(process.env.DB_PATH || './data/ars-store.sqlite');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-
 if (SESSION_SECRET === 'development-only-change-me') {
   console.warn('[security] Set SESSION_SECRET in .env before deployment.');
 }
@@ -31,7 +29,6 @@ if (IS_PRODUCTION && !APP_URL.startsWith('https://')) {
 
 app.disable('x-powered-by');
 if (IS_PRODUCTION) app.set('trust proxy', 1);
-
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -47,7 +44,6 @@ app.use(helmet({
     }
   }
 }));
-
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
@@ -60,7 +56,6 @@ db.exec(`
     picture TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
   );
-
   CREATE TABLE IF NOT EXISTS orders (
     id TEXT PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id),
@@ -79,7 +74,6 @@ db.exec(`
     paid_at TEXT,
     fulfilled_at TEXT
   );
-
   CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
   CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 
@@ -90,7 +84,6 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_sessions_expire ON sessions(expire);
 `);
-
 class SQLiteSessionStore extends session.Store {
   get(sid, callback) {
     try {
@@ -104,7 +97,6 @@ class SQLiteSessionStore extends session.Store {
       return callback(error);
     }
   }
-
   set(sid, sess, callback) {
     try {
       const expiry = sess.cookie && sess.cookie.expires
@@ -119,7 +111,6 @@ class SQLiteSessionStore extends session.Store {
       if (callback) callback(error);
     }
   }
-
   destroy(sid, callback) {
     try {
       db.prepare('DELETE FROM sessions WHERE sid = ?').run(sid);
@@ -128,7 +119,6 @@ class SQLiteSessionStore extends session.Store {
       if (callback) callback(error);
     }
   }
-
   touch(sid, sess, callback) {
     try {
       const expiry = sess.cookie && sess.cookie.expires
@@ -142,7 +132,6 @@ class SQLiteSessionStore extends session.Store {
     }
   }
 }
-
 app.use(session({
   name: 'ars.sid',
   secret: SESSION_SECRET,
@@ -157,7 +146,6 @@ app.use(session({
     maxAge: 7 * 24 * 60 * 60 * 1000
   }
 }));
-
 const googleClientId = process.env.GOOGLE_CLIENT_ID || '';
 const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET || '';
 const googleOAuth = new OAuth2Client(
@@ -178,7 +166,6 @@ const orderLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false
 });
-
 // Parse JSON request bodies for app APIs, but preserve the raw Binance webhook body for signature verification.
 app.use((req, res, next) => {
   if (req.method === 'POST' && req.path === '/api/binance/webhook') return next();
@@ -188,7 +175,6 @@ app.use((req, res, next) => {
 function nowIso() {
   return new Date().toISOString();
 }
-
 function safeEqual(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   const left = Buffer.from(a);
@@ -200,7 +186,6 @@ function createBinanceSignature(timestamp, nonce, body, secret) {
   const payload = `${timestamp}\n${nonce}\n${body}\n`;
   return crypto.createHmac('sha512', secret).update(payload).digest('hex').toUpperCase();
 }
-
 function getPaymentSpec() {
   const fiatAmount = (process.env.BINANCE_PAY_FIAT_AMOUNT || '').trim();
   const fiatCurrency = (process.env.BINANCE_PAY_FIAT_CURRENCY || '').trim().toUpperCase();
@@ -209,7 +194,6 @@ function getPaymentSpec() {
     if (!Number.isFinite(n) || n <= 0) throw new Error('BINANCE_PAY_FIAT_AMOUNT must be a positive number.');
     return { amount: String(fiatAmount), currency: fiatCurrency, mode: 'fiat', body: { fiatAmount: n, fiatCurrency } };
   }
-
   const orderAmount = (process.env.BINANCE_PAY_ORDER_AMOUNT || '').trim();
   const orderCurrency = (process.env.BINANCE_PAY_ORDER_CURRENCY || '').trim().toUpperCase();
   if (orderAmount && orderCurrency) {
@@ -217,7 +201,6 @@ function getPaymentSpec() {
     if (!Number.isFinite(n) || n <= 0) throw new Error('BINANCE_PAY_ORDER_AMOUNT must be a positive number.');
     return { amount: String(orderAmount), currency: orderCurrency, mode: 'crypto', body: { orderAmount: n, currency: orderCurrency } };
   }
-
   throw new Error('Configure Binance Pay fiat amount/currency or crypto amount/currency in .env.');
 }
 
@@ -227,7 +210,6 @@ function requireLogin(req, res, next) {
   }
   next();
 }
-
 function requireAdmin(req, res, next) {
   const expected = process.env.ADMIN_TOKEN || '';
   const supplied = req.get('x-admin-token') || '';
@@ -235,7 +217,6 @@ function requireAdmin(req, res, next) {
   if (!safeEqual(supplied, expected)) return res.status(401).json({ error: 'Admin authorization failed.' });
   next();
 }
-
 function checkSameOrigin(req, res, next) {
   const origin = req.get('origin');
   if (!origin) return next();
@@ -248,7 +229,6 @@ function checkSameOrigin(req, res, next) {
   }
   next();
 }
-
 app.get('/auth/google', authLimiter, (req, res, next) => {
   if (!googleClientId || !googleClientSecret) {
     return res.redirect('/?notice=google-config');
@@ -265,7 +245,6 @@ app.get('/auth/google', authLimiter, (req, res, next) => {
     res.redirect(url);
   });
 });
-
 app.get('/auth/google/callback', authLimiter, async (req, res, next) => {
   try {
     if (req.query.error) return res.redirect('/?notice=auth-error');
@@ -276,7 +255,6 @@ app.get('/auth/google/callback', authLimiter, async (req, res, next) => {
     if (typeof code !== 'string' || typeof state !== 'string' || !savedState || !safeEqual(state, savedState)) {
       return res.status(400).send('Google sign-in could not be verified. Please return to ARS Store and try again.');
     }
-
     const { tokens } = await googleOAuth.getToken(code);
     if (!tokens.id_token) throw new Error('Google did not return an ID token.');
     const ticket = await googleOAuth.verifyIdToken({
@@ -287,7 +265,6 @@ app.get('/auth/google/callback', authLimiter, async (req, res, next) => {
     if (!profile || !profile.sub || !profile.email || profile.email_verified !== true) {
       return res.status(401).send('A verified Google email is required to sign in.');
     }
-
     const createdAt = nowIso();
     db.prepare(`
       INSERT INTO users (google_sub, email, name, picture, created_at)
@@ -303,7 +280,6 @@ app.get('/auth/google/callback', authLimiter, async (req, res, next) => {
       profile.picture || '',
       createdAt
     );
-
     const row = db.prepare('SELECT id, email, name, picture FROM users WHERE google_sub = ?').get(profile.sub);
     req.session.regenerate((error) => {
       if (error) return next(error);
@@ -323,7 +299,6 @@ app.get('/auth/google/callback', authLimiter, async (req, res, next) => {
     res.redirect('/?notice=auth-error');
   }
 });
-
 app.post('/auth/logout', (req, res) => {
   req.session.destroy(() => {
     res.clearCookie('ars.sid', {
@@ -334,7 +309,6 @@ app.post('/auth/logout', (req, res) => {
     res.json({ ok: true });
   });
 });
-
 app.get('/api/config', (req, res) => {
   let payment = { configured: false, mode: null, amount: null, currency: null };
   try {
@@ -346,9 +320,8 @@ app.get('/api/config', (req, res) => {
       currency: spec.currency
     };
   } catch {
-    // Public storefront remains viewable before payment credentials are configured.
+    // Public storefront remains viewable before credentials are configured.
   }
-
   res.json({
     storeName: 'ARS Store',
     productName: 'Gemini AI Pro',
@@ -362,7 +335,6 @@ app.get('/api/config', (req, res) => {
 app.get('/api/me', (req, res) => {
   res.json({ user: (req.session && req.session.user) || null });
 });
-
 app.post('/api/orders', orderLimiter, checkSameOrigin, requireLogin, async (req, res) => {
   const whatsapp = typeof req.body?.whatsapp === 'string' ? req.body.whatsapp.trim() : '';
   const note = typeof req.body?.note === 'string' ? req.body.note.trim().slice(0, 500) : '';
@@ -370,7 +342,6 @@ app.post('/api/orders', orderLimiter, checkSameOrigin, requireLogin, async (req,
   if (whatsapp.length < 8 || whatsapp.length > 24 || !/^[+0-9()\-\s]+$/.test(whatsapp)) {
     return res.status(400).json({ error: 'সঠিক WhatsApp / মোবাইল নম্বর দিন।' });
   }
-
   let spec;
   try {
     spec = getPaymentSpec();
@@ -385,12 +356,10 @@ app.post('/api/orders', orderLimiter, checkSameOrigin, requireLogin, async (req,
   if (!apiKey || !secretKey) {
     return res.status(503).json({ error: 'Binance Pay API credentials .env ফাইলে যোগ করা হয়নি।' });
   }
-
   const orderId = crypto.randomBytes(12).toString('hex');
   const createdAt = nowIso();
   const priceBdt = Math.max(0, Number(process.env.PRODUCT_PRICE_BDT || 350));
   const durationMonths = Math.max(1, Number(process.env.PRODUCT_DURATION_MONTHS || 18));
-
   db.prepare(`
     INSERT INTO orders (
       id, user_id, email, whatsapp, product_id, price_bdt,
@@ -409,7 +378,6 @@ app.post('/api/orders', orderLimiter, checkSameOrigin, requireLogin, async (req,
     createdAt,
     createdAt
   );
-
   const body = {
     env: { terminalType: 'WAP' },
     merchantTradeNo: orderId,
@@ -430,13 +398,11 @@ app.post('/api/orders', orderLimiter, checkSameOrigin, requireLogin, async (req,
     webhookUrl: `${APP_URL}/api/binance/webhook`,
     ...spec.body
   };
-
   const bodyText = JSON.stringify(body);
   const timestamp = String(Date.now());
   const nonce = crypto.randomBytes(16).toString('hex');
   const signature = createBinanceSignature(timestamp, nonce, bodyText, secretKey);
   const baseUrl = (process.env.BINANCE_PAY_BASE_URL || 'https://bpay.binanceapi.com').replace(/\/+$/, '');
-
   try {
     const response = await fetch(`${baseUrl}/binancepay/openapi/v3/order`, {
       method: 'POST',
@@ -450,7 +416,6 @@ app.post('/api/orders', orderLimiter, checkSameOrigin, requireLogin, async (req,
       body: bodyText,
       signal: AbortSignal.timeout(15000)
     });
-
     const result = await response.json().catch(() => ({}));
     if (!response.ok || result.status !== 'SUCCESS' || !result.data?.checkoutUrl) {
       console.error('[binance-create-order]', result.code || response.status, result.errorMessage || '');
@@ -460,13 +425,11 @@ app.post('/api/orders', orderLimiter, checkSameOrigin, requireLogin, async (req,
         error: 'Binance Pay অর্ডার তৈরি করতে পারেনি। Merchant settings, supported currency এবং API credentials যাচাই করুন।'
       });
     }
-
     db.prepare(`
       UPDATE orders
       SET binance_prepay_id = ?, checkout_url = ?, updated_at = ?
       WHERE id = ?
     `).run(result.data.prepayId || null, result.data.checkoutUrl, nowIso(), orderId);
-
     res.json({ orderId, checkoutUrl: result.data.checkoutUrl });
   } catch (error) {
     console.error('[binance-create-order]', error.message);
@@ -475,14 +438,12 @@ app.post('/api/orders', orderLimiter, checkSameOrigin, requireLogin, async (req,
     res.status(502).json({ error: 'Binance Pay-এ সংযোগ করা যায়নি। পরে আবার চেষ্টা করুন।' });
   }
 });
-
 // Verify Binance's signed webhook before reading or updating any order.
 app.post('/api/binance/webhook', express.raw({ type: 'application/json', limit: '100kb' }), (req, res) => {
   const timestamp = req.get('binancepay-timestamp') || '';
   const nonce = req.get('binancepay-nonce') || '';
   const signature = req.get('binancepay-signature') || '';
   const secret = process.env.BINANCE_PAY_SECRET_KEY || '';
-
   if (!secret || !Buffer.isBuffer(req.body) || !timestamp || !nonce || !signature) {
     return res.status(400).json({ returnCode: 'FAIL', returnMessage: 'Missing webhook signature data' });
   }
@@ -491,7 +452,6 @@ app.post('/api/binance/webhook', express.raw({ type: 'application/json', limit: 
   if (!safeEqual(signature.toUpperCase(), expected)) {
     return res.status(401).json({ returnCode: 'FAIL', returnMessage: 'Invalid signature' });
   }
-
   try {
     const event = JSON.parse(req.body.toString('utf8'));
     const data = typeof event.data === 'string'
@@ -500,7 +460,6 @@ app.post('/api/binance/webhook', express.raw({ type: 'application/json', limit: 
 
     const status = event.bizStatus || data.bizStatus || '';
     const merchantTradeNo = data.merchantTradeNo || event.merchantTradeNo || '';
-
     // Only the verified payment-success event may mark an order paid.
     if (status === 'PAY_SUCCESS' && merchantTradeNo) {
       const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(merchantTradeNo);
@@ -509,7 +468,6 @@ app.post('/api/binance/webhook', express.raw({ type: 'application/json', limit: 
         const receivedAmountRaw = data.fiatCurrency
           ? data.fiatAmount
           : (data.orderAmount ?? data.totalFee);
-
         if (receivedCurrency && receivedAmountRaw != null) {
           const currencyMatches = receivedCurrency === order.payment_currency.toUpperCase();
           const amountMatches = Math.abs(Number(receivedAmountRaw) - Number(order.payment_amount)) < 0.0000001;
@@ -518,7 +476,6 @@ app.post('/api/binance/webhook', express.raw({ type: 'application/json', limit: 
             return res.status(400).json({ returnCode: 'FAIL', returnMessage: 'Order amount mismatch' });
           }
         }
-
         db.prepare(`
           UPDATE orders
           SET status = CASE WHEN status = 'fulfilled' THEN status ELSE 'paid' END,
@@ -528,14 +485,12 @@ app.post('/api/binance/webhook', express.raw({ type: 'application/json', limit: 
         `).run(nowIso(), nowIso(), merchantTradeNo);
       }
     }
-
     return res.json({ returnCode: 'SUCCESS', returnMessage: null });
   } catch (error) {
     console.error('[binance-webhook]', error.message);
     return res.status(400).json({ returnCode: 'FAIL', returnMessage: 'Invalid payload' });
   }
 });
-
 app.get('/api/orders/:id', requireLogin, (req, res) => {
   const order = db.prepare(`
     SELECT id, product_id, price_bdt, payment_amount, payment_currency,
@@ -545,6 +500,29 @@ app.get('/api/orders/:id', requireLogin, (req, res) => {
 
   if (!order) return res.status(404).json({ error: 'অর্ডার পাওয়া যায়নি।' });
   res.json({ order });
+});
+
+// Download a consistent SQLite snapshot. This endpoint requires the same admin token as order management.
+app.get('/api/admin/backup', requireAdmin, async (req, res, next) => {
+  const tempPath = path.join(
+    require('node:os').tmpdir(),
+    `ars-backup-${crypto.randomBytes(12).toString('hex')}.sqlite`
+  );
+
+  try {
+    await db.backup(tempPath);
+    res.setHeader('Cache-Control', 'no-store');
+    const filename =
+      `ars-store-backup-${new Date().toISOString().replace(/[:.]/g, '-')}.sqlite`;
+
+    res.download(tempPath, filename, (error) => {
+      fs.promises.unlink(tempPath).catch(() => {});
+      if (error && !res.headersSent) next(error);
+    });
+  } catch (error) {
+    fs.promises.unlink(tempPath).catch(() => {});
+    next(error);
+  }
 });
 
 app.get('/api/admin/orders', requireAdmin, (req, res) => {
@@ -557,14 +535,12 @@ app.get('/api/admin/orders', requireAdmin, (req, res) => {
   `).all();
   res.json({ orders: rows });
 });
-
 app.post('/api/admin/orders/:id/fulfill', requireAdmin, (req, res) => {
   const order = db.prepare('SELECT id, status FROM orders WHERE id = ?').get(req.params.id);
   if (!order) return res.status(404).json({ error: 'Order not found.' });
   if (order.status !== 'paid') {
     return res.status(409).json({ error: 'Only a verified paid order can be fulfilled.' });
   }
-
   db.prepare("UPDATE orders SET status = 'fulfilled', fulfilled_at = ?, updated_at = ? WHERE id = ?")
     .run(nowIso(), nowIso(), req.params.id);
   res.json({ ok: true });
@@ -584,7 +560,6 @@ app.use(express.static(PUBLIC_DIR, {
   etag: true,
   maxAge: IS_PRODUCTION ? '1h' : 0
 }));
-
 app.get('/payment/success', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'payment.html')));
 app.get('/payment/cancel', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'payment.html')));
 app.get('/admin', (req, res) => res.sendFile(path.join(PUBLIC_DIR, 'admin.html')));
@@ -593,7 +568,6 @@ app.use((req, res) => {
   if (req.path.startsWith('/api/')) return res.status(404).json({ error: 'API route not found.' });
   res.status(404).send('Page not found.');
 });
-
 app.use((error, req, res, next) => {
   console.error('[server-error]', error.message);
   if (res.headersSent) return next(error);
