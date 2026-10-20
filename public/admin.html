@@ -26,7 +26,11 @@
       </form>
       <p id="adminMessage" class="admin-message" role="status"></p>
       <div id="ordersWrap" hidden>
-        <div class="admin-list-header"><h2>সাম্প্রতিক অর্ডার</h2><button id="reloadOrders" class="button button-light button-small" type="button">Refresh</button></div>
+        <div class="admin-list-header">
+          <h2>সাম্প্রতিক অর্ডার</h2>
+          <button id="downloadBackup" class="button button-light button-small" type="button">ডেটাবেস ব্যাকআপ</button>
+          <button id="reloadOrders" class="button button-light button-small" type="button">Refresh</button>
+        </div>
         <div id="ordersList" class="orders-list"></div>
       </div>
     </section>
