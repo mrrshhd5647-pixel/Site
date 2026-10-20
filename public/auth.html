@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="bn">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>Account | ARS Store</title>
+  <link rel="stylesheet" href="/styles.css">
+  <link rel="stylesheet" href="/auth.css">
+  <script src="/auth.js" defer></script>
+</head>
+<body>
+  <header class="site-header auth-header">
+    <a class="brand" href="/"><span class="brand-mark">ARS</span><span class="brand-copy"><strong>ARS STORE</strong><small>Account</small></span></a>
+    <a class="auth-back" href="/">স্টোরে ফিরে যান</a>
+  </header>
+  <main class="auth-shell">
+    <section class="auth-card" aria-labelledby="authTitle">
+      <div class="auth-mark" aria-hidden="true">ARS</div>
+      <p class="auth-eyebrow">ARS STORE ACCOUNT</p>
+      <h1 id="authTitle">আপনার অ্যাকাউন্টে প্রবেশ করুন</h1>
+      <p id="authIntro" class="auth-intro">ইমেইল ও পাসওয়ার্ড দিয়ে লগইন করুন, অথবা নতুন অ্যাকাউন্ট তৈরি করুন।</p>
+
+      <div id="authTabs" class="auth-tabs" role="tablist" aria-label="Login or register">
+        <button class="auth-tab is-active" id="loginTab" type="button" role="tab" aria-selected="true">লগইন</button>
+        <button class="auth-tab" id="registerTab" type="button" role="tab" aria-selected="false">নতুন অ্যাকাউন্ট</button>
+      </div>
+
+      <form id="authForm" novalidate>
+        <div id="nameField" class="auth-field" hidden>
+          <label for="name">আপনার নাম (ঐচ্ছিক)</label>
+          <input id="name" name="name" type="text" autocomplete="name" maxlength="60" placeholder="আপনার নাম">
+        </div>
+        <div id="emailField" class="auth-field">
+          <label for="email">ইমেইল ঠিকানা</label>
+          <input id="email" name="email" type="email" autocomplete="email" maxlength="254" required placeholder="name@example.com">
+        </div>
+        <div id="passwordField" class="auth-field">
+          <label id="passwordLabel" for="password">পাসওয়ার্ড</label>
+          <input id="password" name="password" type="password" autocomplete="current-password" minlength="10" maxlength="128" required placeholder="কমপক্ষে ১০ অক্ষর">
+          <p id="passwordHint" class="auth-hint">অন্তত ১০ অক্ষরের শক্তিশালী পাসওয়ার্ড ব্যবহার করুন।</p>
+        </div>
+        <div id="confirmField" class="auth-field" hidden>
+          <label for="confirmPassword">পাসওয়ার্ড আবার লিখুন</label>
+          <input id="confirmPassword" name="confirmPassword" type="password" autocomplete="new-password" minlength="10" maxlength="128" placeholder="একই পাসওয়ার্ড আবার দিন">
+        </div>
+        <button id="submitButton" class="auth-submit" type="submit">লগইন করুন</button>
+      </form>
+      <div id="authLinks" class="auth-links">
+        <button id="forgotLink" class="auth-link" type="button">পাসওয়ার্ড ভুলে গেছেন?</button>
+        <button id="backToLogin" class="auth-link" type="button" hidden>লগইনে ফিরে যান</button>
+      </div>
+      <p id="authMessage" class="auth-message" role="status" aria-live="polite"></p>
+
+      <section id="changePasswordPanel" class="change-password-panel" hidden>
+        <div class="account-summary">
+          <p class="auth-eyebrow">YOUR ACCOUNT</p>
+          <p id="loggedInEmail" class="account-email"></p>
+          <p class="auth-hint">বর্তমান পাসওয়ার্ড দিয়ে নতুন পাসওয়ার্ড সেট করুন।</p>
+        </div>
+        <form id="changePasswordForm" novalidate>
+          <div class="auth-field">
+            <label for="currentPassword">বর্তমান পাসওয়ার্ড</label>
+            <input id="currentPassword" type="password" autocomplete="current-password" required maxlength="128">
+          </div>
+          <div class="auth-field">
+            <label for="newPassword">নতুন পাসওয়ার্ড</label>
+            <input id="newPassword" type="password" autocomplete="new-password" required minlength="10" maxlength="128">
+          </div>
+          <div class="auth-field">
+            <label for="newPasswordConfirm">নতুন পাসওয়ার্ড আবার লিখুন</label>
+            <input id="newPasswordConfirm" type="password" autocomplete="new-password" required minlength="10" maxlength="128">
+          </div>
+          <button id="changePasswordButton" class="auth-submit" type="submit">পাসওয়ার্ড পরিবর্তন করুন</button>
+        </form>
+        <button id="logoutButton" class="auth-secondary-button" type="button">লগআউট</button>
+        <p id="changePasswordMessage" class="auth-message" role="status" aria-live="polite"></p>
+      </section>
+
+      <p class="auth-footnote">পাসওয়ার্ড hash করে সংরক্ষণ করা হয়। রিসেট লিংক ৩০ মিনিটে মেয়াদোত্তীর্ণ হবে এবং একবারই ব্যবহার করা যাবে।</p>
+    </section>
+  </main>
+</body>
+</html>
