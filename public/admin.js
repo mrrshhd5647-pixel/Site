@@ -16,7 +16,6 @@ async function loadOrders() {
   const list = $('#ordersList');
   message.textContent = 'অর্ডার লোড হচ্ছে…';
   list.replaceChildren();
-
   try {
     const response = await fetch('/api/admin/orders', {
       headers: { 'x-admin-token': adminToken, Accept: 'application/json' }
@@ -30,7 +29,6 @@ async function loadOrders() {
       list.append(text('p', 'order-meta', 'এখনো কোনো অর্ডার নেই।'));
       return;
     }
-
     for (const order of data.orders) {
       const card = text('article', 'order-card', '');
       const head = text('div', 'order-head', '');
@@ -38,14 +36,12 @@ async function loadOrders() {
       const status = text('span', 'order-status', order.status.toUpperCase());
       head.append(heading, status);
       card.append(head);
-
       const amount = order.payment_amount && order.payment_currency
         ? `${order.payment_amount} ${order.payment_currency}`
         : '—';
       card.append(text('div', 'order-meta', `WhatsApp: ${order.whatsapp} · Display price: ৳${order.price_bdt} · Payment: ${amount}`));
       card.append(text('div', 'order-meta', `Created: ${new Date(order.created_at).toLocaleString()}${order.paid_at ? ` · Paid: ${new Date(order.paid_at).toLocaleString()}` : ''}`));
       if (order.note) card.append(text('div', 'order-note', `Note: ${order.note}`));
-
       const actions = text('div', 'order-actions', '');
       const copyButton = text('button', 'button button-light button-small', 'Order ID কপি');
       copyButton.type = 'button';
@@ -58,7 +54,6 @@ async function loadOrders() {
         }
       });
       actions.append(copyButton);
-
       const fulfill = text('button', 'button button-primary button-small', 'Fulfilled হিসেবে চিহ্নিত করুন');
       fulfill.type = 'button';
       fulfill.disabled = order.status !== 'paid';
@@ -93,4 +88,43 @@ $('#adminLoginForm').addEventListener('submit', async (event) => {
   adminToken = $('#adminToken').value.trim();
   await loadOrders();
 });
+
 $('#reloadOrders').addEventListener('click', loadOrders);
+
+$('#downloadBackup').addEventListener('click', async () => {
+  const button = $('#downloadBackup');
+  const message = $('#adminMessage');
+  button.disabled = true;
+  message.textContent = 'ডেটাবেস ব্যাকআপ তৈরি হচ্ছে…';
+
+  try {
+    const response = await fetch('/api/admin/backup', {
+      headers: { 'x-admin-token': adminToken }
+    });
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || 'ব্যাকআপ ডাউনলোড করা যায়নি।');
+    }
+
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const disposition = response.headers.get('content-disposition') || '';
+    const filenameMatch = disposition.match(/filename="?([^";]+)"?/i);
+
+    link.href = objectUrl;
+    link.download = filenameMatch
+      ? filenameMatch[1]
+      : `ars-store-backup-${new Date().toISOString().slice(0, 10)}.sqlite`;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+    message.textContent = 'ব্যাকআপ ডাউনলোড শুরু হয়েছে। ফাইলটি নিরাপদ স্থানে রাখুন।';
+  } catch (error) {
+    message.textContent = error.message || 'ব্যাকআপ ডাউনলোড করা যায়নি।';
+  } finally {
+    button.disabled = false;
+  }
+});
