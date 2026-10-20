@@ -32,14 +32,14 @@
           <label for="name">আপনার নাম (ঐচ্ছিক)</label>
           <input id="name" name="name" type="text" autocomplete="name" maxlength="60" placeholder="আপনার নাম">
         </div>
-        <div id="emailField" class="auth-field">
+        <div class="auth-field">
           <label for="email">ইমেইল ঠিকানা</label>
           <input id="email" name="email" type="email" autocomplete="email" maxlength="254" required placeholder="name@example.com">
         </div>
-        <div id="passwordField" class="auth-field">
+        <div class="auth-field">
           <label id="passwordLabel" for="password">পাসওয়ার্ড</label>
           <input id="password" name="password" type="password" autocomplete="current-password" minlength="10" maxlength="128" required placeholder="কমপক্ষে ১০ অক্ষর">
-          <p id="passwordHint" class="auth-hint">অন্তত ১০ অক্ষরের শক্তিশালী পাসওয়ার্ড ব্যবহার করুন।</p>
+          <p id="passwordHint" class="auth-hint">আপনার অ্যাকাউন্টের পাসওয়ার্ড দিন।</p>
         </div>
         <div id="confirmField" class="auth-field" hidden>
           <label for="confirmPassword">পাসওয়ার্ড আবার লিখুন</label>
@@ -49,36 +49,9 @@
       </form>
       <div id="authLinks" class="auth-links">
         <button id="forgotLink" class="auth-link" type="button">পাসওয়ার্ড ভুলে গেছেন?</button>
-        <button id="backToLogin" class="auth-link" type="button" hidden>লগইনে ফিরে যান</button>
       </div>
       <p id="authMessage" class="auth-message" role="status" aria-live="polite"></p>
-
-      <section id="changePasswordPanel" class="change-password-panel" hidden>
-        <div class="account-summary">
-          <p class="auth-eyebrow">YOUR ACCOUNT</p>
-          <p id="loggedInEmail" class="account-email"></p>
-          <p class="auth-hint">বর্তমান পাসওয়ার্ড দিয়ে নতুন পাসওয়ার্ড সেট করুন।</p>
-        </div>
-        <form id="changePasswordForm" novalidate>
-          <div class="auth-field">
-            <label for="currentPassword">বর্তমান পাসওয়ার্ড</label>
-            <input id="currentPassword" type="password" autocomplete="current-password" required maxlength="128">
-          </div>
-          <div class="auth-field">
-            <label for="newPassword">নতুন পাসওয়ার্ড</label>
-            <input id="newPassword" type="password" autocomplete="new-password" required minlength="10" maxlength="128">
-          </div>
-          <div class="auth-field">
-            <label for="newPasswordConfirm">নতুন পাসওয়ার্ড আবার লিখুন</label>
-            <input id="newPasswordConfirm" type="password" autocomplete="new-password" required minlength="10" maxlength="128">
-          </div>
-          <button id="changePasswordButton" class="auth-submit" type="submit">পাসওয়ার্ড পরিবর্তন করুন</button>
-        </form>
-        <button id="logoutButton" class="auth-secondary-button" type="button">লগআউট</button>
-        <p id="changePasswordMessage" class="auth-message" role="status" aria-live="polite"></p>
-      </section>
-
-      <p class="auth-footnote">পাসওয়ার্ড hash করে সংরক্ষণ করা হয়। রিসেট লিংক ৩০ মিনিটে মেয়াদোত্তীর্ণ হবে এবং একবারই ব্যবহার করা যাবে।</p>
+      <p class="auth-footnote">পাসওয়ার্ড ভুলে গেলে অ্যাডমিনের সঙ্গে যোগাযোগ করুন। পাসওয়ার্ড নিরাপদভাবে hash করে সংরক্ষণ করা হয়।</p>
     </section>
   </main>
 </body>
