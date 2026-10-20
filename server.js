@@ -5,12 +5,14 @@ require('dotenv').config();
 const path = require('node:path');
 const fs = require('node:fs');
 const crypto = require('node:crypto');
+const { promisify } = require('node:util');
+const scryptAsync = promisify(crypto.scrypt);
 const express = require('express');
 const session = require('express-session');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const Database = require('better-sqlite3');
-const { OAuth2Client } = require('google-auth-library');
+const nodemailer = require('nodemailer');
 const app = express();
 const PORT = Number(process.env.PORT || 3000);
 const APP_URL = (process.env.APP_URL || `http://localhost:${PORT}`).replace(/\/+$/, '');
@@ -40,7 +42,7 @@ app.use(helmet({
       scriptSrc: ["'self'"],
       styleSrc: ["'self'"],
       connectSrc: ["'self'"],
-      formAction: ["'self'", 'https://accounts.google.com']
+      formAction: ["'self'"]
     }
   }
 }));
@@ -76,6 +78,22 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_orders_user_id ON orders(user_id);
   CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
+
+  CREATE TABLE IF NOT EXISTS password_credentials (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS password_reset_tokens (
+    token_hash TEXT PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    expires_at INTEGER NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user_id);
+  CREATE INDEX IF NOT EXISTS idx_password_reset_expiry ON password_reset_tokens(expires_at);
 
   CREATE TABLE IF NOT EXISTS sessions (
     sid TEXT PRIMARY KEY,
@@ -146,17 +164,34 @@ app.use(session({
     maxAge: 7 * 24 * 60 * 60 * 1000
   }
 }));
-const googleClientId = process.env.GOOGLE_CLIENT_ID || '';
-const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET || '';
-const googleOAuth = new OAuth2Client(
-  googleClientId,
-  googleClientSecret,
-  `${APP_URL}/auth/google/callback`
-);
 
-const authLimiter = rateLimit({
+const registerLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  limit: 30,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false
+});
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false
+});
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false
+});
+const resetPasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: 'draft-7',
+  legacyHeaders: false
+});
+const changePasswordLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
   standardHeaders: 'draft-7',
   legacyHeaders: false
 });
@@ -180,6 +215,89 @@ function safeEqual(a, b) {
   const left = Buffer.from(a);
   const right = Buffer.from(b);
   return left.length === right.length && crypto.timingSafeEqual(left, right);
+}
+
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+function validEmail(email) {
+  return email.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+async function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const derived = await scryptAsync(password, salt, 64);
+  return `scrypt$${salt}$${Buffer.from(derived).toString('hex')}`;
+}
+async function verifyPassword(password, encoded) {
+  try {
+    const [scheme, salt, storedHex] = String(encoded || '').split('$');
+    if (scheme !== 'scrypt' || !salt || !/^[a-f0-9]{32}$/i.test(salt) ||
+        !storedHex || !/^[a-f0-9]{128}$/i.test(storedHex)) return false;
+    const derived = Buffer.from(await scryptAsync(password, salt, 64));
+    const stored = Buffer.from(storedHex, 'hex');
+    return stored.length === derived.length && crypto.timingSafeEqual(stored, derived);
+  } catch {
+    return false;
+  }
+}
+function establishUserSession(req, user) {
+  return new Promise((resolve, reject) => {
+    req.session.regenerate((error) => {
+      if (error) return reject(error);
+      req.session.user = {
+        id: user.id,
+        email: user.email,
+        name: user.name || '',
+        picture: user.picture || ''
+      };
+      req.session.save((saveError) => saveError ? reject(saveError) : resolve());
+    });
+  });
+}
+
+function createSmtpTransport() {
+  const host = (process.env.SMTP_HOST || '').trim();
+  const port = Number(process.env.SMTP_PORT || 587);
+  const user = process.env.SMTP_USER || '';
+  const pass = process.env.SMTP_PASS || '';
+  if (!host || !user || !pass || !Number.isInteger(port) || port < 1 || port > 65535) return null;
+  const secure = String(process.env.SMTP_SECURE || '').toLowerCase() === 'true' || port === 465;
+  return nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: { user, pass },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000
+  });
+}
+function invalidateUserSessions(userId, exceptSid = null) {
+  const rows = db.prepare('SELECT sid, sess FROM sessions').all();
+  const remove = [];
+  for (const row of rows) {
+    if (exceptSid && row.sid === exceptSid) continue;
+    try {
+      const stored = JSON.parse(row.sess);
+      if (stored && stored.user && Number(stored.user.id) === Number(userId)) remove.push(row.sid);
+    } catch {
+      // Leave malformed session rows to expire normally.
+    }
+  }
+  if (remove.length) {
+    const del = db.prepare('DELETE FROM sessions WHERE sid = ?');
+    const transaction = db.transaction((ids) => ids.forEach((sid) => del.run(sid)));
+    transaction(remove);
+  }
+}
+function passwordPolicyError(password) {
+  if (typeof password !== 'string' || password.length < 10 || password.length > 128) {
+    return 'নতুন পাসওয়ার্ড ১০ থেকে ১২৮ অক্ষরের মধ্যে হতে হবে।';
+  }
+  if (/[\u0000-\u001f\u007f]/.test(password)) {
+    return 'পাসওয়ার্ডে অবৈধ অক্ষর রয়েছে।';
+  }
+  return null;
 }
 
 function createBinanceSignature(timestamp, nonce, body, secret) {
@@ -206,7 +324,7 @@ function getPaymentSpec() {
 
 function requireLogin(req, res, next) {
   if (!req.session || !req.session.user) {
-    return res.status(401).json({ error: 'অর্ডার করার আগে Google দিয়ে লগইন করুন।' });
+    return res.status(401).json({ error: 'অর্ডার করার আগে ইমেইল ও পাসওয়ার্ড দিয়ে লগইন করুন।' });
   }
   next();
 }
@@ -229,77 +347,259 @@ function checkSameOrigin(req, res, next) {
   }
   next();
 }
-app.get('/auth/google', authLimiter, (req, res, next) => {
-  if (!googleClientId || !googleClientSecret) {
-    return res.redirect('/?notice=google-config');
-  }
-  const state = crypto.randomBytes(32).toString('hex');
-  req.session.oauthState = state;
-  const url = googleOAuth.generateAuthUrl({
-    scope: ['openid', 'email', 'profile'],
-    state,
-    prompt: 'select_account'
-  });
-  req.session.save((error) => {
-    if (error) return next(error);
-    res.redirect(url);
-  });
+app.get('/auth', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.sendFile(path.join(PUBLIC_DIR, 'auth.html'));
 });
-app.get('/auth/google/callback', authLimiter, async (req, res, next) => {
-  try {
-    if (req.query.error) return res.redirect('/?notice=auth-error');
-    const { code, state } = req.query;
-    const savedState = req.session.oauthState;
-    delete req.session.oauthState;
+app.get('/auth/reset', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.sendFile(path.join(PUBLIC_DIR, 'auth.html'));
+});
 
-    if (typeof code !== 'string' || typeof state !== 'string' || !savedState || !safeEqual(state, savedState)) {
-      return res.status(400).send('Google sign-in could not be verified. Please return to ARS Store and try again.');
+// Compatibility redirect: any old "Google login" link that points to /auth/google
+// now opens the email/password page instead.
+app.get('/auth/google', (req, res) => res.redirect(302, '/auth'));
+
+app.post('/api/auth/register', checkSameOrigin, registerLimiter, async (req, res, next) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim().slice(0, 60) : '';
+
+    if (!validEmail(email)) return res.status(400).json({ error: 'সঠিক ইমেইল ঠিকানা দিন।' });
+    if (password.length < 10 || password.length > 128) {
+      return res.status(400).json({ error: 'পাসওয়ার্ড ১০ থেকে ১২৮ অক্ষরের মধ্যে হতে হবে।' });
     }
-    const { tokens } = await googleOAuth.getToken(code);
-    if (!tokens.id_token) throw new Error('Google did not return an ID token.');
-    const ticket = await googleOAuth.verifyIdToken({
-      idToken: tokens.id_token,
-      audience: googleClientId
-    });
-    const profile = ticket.getPayload();
-    if (!profile || !profile.sub || !profile.email || profile.email_verified !== true) {
-      return res.status(401).send('A verified Google email is required to sign in.');
+    if (/[\u0000-\u001f\u007f]/.test(password)) {
+      return res.status(400).json({ error: 'পাসওয়ার্ডে অবৈধ অক্ষর রয়েছে।' });
     }
+
+    const existing = db.prepare('SELECT id FROM users WHERE lower(email) = ? LIMIT 1').get(email);
+    if (existing) {
+      return res.status(409).json({ error: 'এই ইমেইলে ইতিমধ্যে অ্যাকাউন্ট আছে। লগইন করুন।' });
+    }
+
+    const passwordHash = await hashPassword(password);
     const createdAt = nowIso();
+    const safeName = name || email.split('@')[0].slice(0, 60);
+    const createAccount = db.transaction(() => {
+      const result = db.prepare(`
+        INSERT INTO users (google_sub, email, name, picture, created_at)
+        VALUES (?, ?, ?, '', ?)
+      `).run(`local:${crypto.randomUUID()}`, email, safeName, createdAt);
+      const userId = Number(result.lastInsertRowid);
+      db.prepare(`
+        INSERT INTO password_credentials (user_id, email, password_hash, created_at)
+        VALUES (?, ?, ?, ?)
+      `).run(userId, email, passwordHash, createdAt);
+      return { id: userId, email, name: safeName, picture: '' };
+    });
+    const user = createAccount();
+
+    await establishUserSession(req, user);
+    res.status(201).json({ ok: true, user: { email: user.email, name: user.name } });
+  } catch (error) {
+    if (error && error.code === 'SQLITE_CONSTRAINT_UNIQUE') {
+      return res.status(409).json({ error: 'এই ইমেইলে ইতিমধ্যে অ্যাকাউন্ট আছে। লগইন করুন।' });
+    }
+    next(error);
+  }
+});
+
+app.post('/api/auth/login', checkSameOrigin, loginLimiter, async (req, res, next) => {
+  try {
+    const email = normalizeEmail(req.body?.email);
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    if (!validEmail(email) || password.length < 1 || password.length > 128) {
+      return res.status(400).json({ error: 'ইমেইল ও পাসওয়ার্ড সঠিকভাবে দিন।' });
+    }
+
+    const row = db.prepare(`
+      SELECT u.id, u.email, u.name, u.picture, pc.password_hash
+      FROM password_credentials pc
+      JOIN users u ON u.id = pc.user_id
+      WHERE pc.email = ?
+      LIMIT 1
+    `).get(email);
+
+    if (!row || !(await verifyPassword(password, row.password_hash))) {
+      return res.status(401).json({ error: 'ইমেইল অথবা পাসওয়ার্ড সঠিক নয়।' });
+    }
+
+    await establishUserSession(req, row);
+    res.json({ ok: true, user: { email: row.email, name: row.name } });
+  } catch (error) {
+    next(error);
+  }
+});
+
+
+const genericResetMessage = 'যদি এই ইমেইলে অ্যাকাউন্ট থাকে, তাহলে পাসওয়ার্ড রিসেট করার নির্দেশনা পাঠানো হবে।';
+
+app.post('/api/auth/forgot-password', checkSameOrigin, forgotPasswordLimiter, async (req, res) => {
+  const email = normalizeEmail(req.body?.email);
+  if (!validEmail(email)) {
+    return res.status(400).json({ error: 'সঠিক ইমেইল ঠিকানা দিন।' });
+  }
+
+  const transporter = createSmtpTransport();
+  if (!transporter || !process.env.MAIL_FROM) {
+    return res.status(503).json({
+      error: 'ইমেইল পাঠানোর ব্যবস্থা এখনো কনফিগার করা হয়নি। Railway Variables-এ SMTP settings যোগ করতে হবে।'
+    });
+  }
+
+  const user = db.prepare('SELECT id, email, name FROM users WHERE lower(email) = ? LIMIT 1').get(email);
+  if (user) {
+    const rawToken = crypto.randomBytes(32).toString('hex');
+    const tokenHash = crypto.createHash('sha256').update(rawToken).digest('hex');
+    const expiresAt = Date.now() + 30 * 60 * 1000;
+    db.prepare('DELETE FROM password_reset_tokens WHERE user_id = ?').run(user.id);
     db.prepare(`
-      INSERT INTO users (google_sub, email, name, picture, created_at)
-      VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(google_sub) DO UPDATE SET
-        email = excluded.email,
-        name = excluded.name,
-        picture = excluded.picture
-    `).run(
-      profile.sub,
-      profile.email,
-      profile.name || profile.email.split('@')[0],
-      profile.picture || '',
-      createdAt
-    );
-    const row = db.prepare('SELECT id, email, name, picture FROM users WHERE google_sub = ?').get(profile.sub);
-    req.session.regenerate((error) => {
-      if (error) return next(error);
-      req.session.user = {
-        id: row.id,
-        email: row.email,
-        name: row.name,
-        picture: row.picture
-      };
-      req.session.save((saveError) => {
-        if (saveError) return next(saveError);
-        res.redirect('/');
+      INSERT INTO password_reset_tokens (token_hash, user_id, expires_at, created_at)
+      VALUES (?, ?, ?, ?)
+    `).run(tokenHash, user.id, expiresAt, nowIso());
+
+    const resetUrl = `${APP_URL}/auth/reset?token=${rawToken}`;
+    const textBody = [
+      `Hello ${user.name || user.email},`,
+      '',
+      'A password reset was requested for your ARS Store account.',
+      `Open this link within 30 minutes: ${resetUrl}`,
+      '',
+      'If you did not request this, ignore this email. Your password will not change.'
+    ].join('\n');
+    const htmlBody = `
+      <div style="font-family:Arial,sans-serif;line-height:1.6;color:#172033">
+        <h2>Reset your ARS Store password</h2>
+        <p>Hello,</p>
+        <p>A password reset was requested for your ARS Store account.</p>
+        <p><a href="${resetUrl}" style="display:inline-block;padding:12px 18px;background:#7c3aed;color:#fff;text-decoration:none;border-radius:8px">Reset password</a></p>
+        <p>This link expires in 30 minutes and can be used only once.</p>
+        <p>If you did not request this, ignore this email. Your password will not change.</p>
+      </div>`;
+    try {
+      await transporter.sendMail({
+        from: process.env.MAIL_FROM,
+        to: user.email,
+        subject: 'Reset your ARS Store password',
+        text: textBody,
+        html: htmlBody
       });
+    } catch (error) {
+      db.prepare('DELETE FROM password_reset_tokens WHERE token_hash = ?').run(tokenHash);
+      console.error('[password-reset-email]', error.message);
+      // Do not reveal whether an email address belongs to an account.
+      return res.json({ ok: true, message: genericResetMessage });
+    }
+  }
+
+  // The same response is returned whether or not the account exists.
+  res.json({ ok: true, message: genericResetMessage });
+});
+
+app.post('/api/auth/reset-password', checkSameOrigin, resetPasswordLimiter, async (req, res, next) => {
+  try {
+    const token = typeof req.body?.token === 'string' ? req.body.token.trim() : '';
+    const password = typeof req.body?.password === 'string' ? req.body.password : '';
+    const policyError = passwordPolicyError(password);
+    if (policyError) return res.status(400).json({ error: policyError });
+    if (!/^[a-f0-9]{64}$/i.test(token)) {
+      return res.status(400).json({ error: 'রিসেট লিংকটি সঠিক নয় বা মেয়াদ শেষ হয়েছে। নতুন লিংক নিন।' });
+    }
+
+    const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+    const record = db.prepare(`
+      SELECT prt.user_id, prt.expires_at, u.email
+      FROM password_reset_tokens prt
+      JOIN users u ON u.id = prt.user_id
+      WHERE prt.token_hash = ?
+      LIMIT 1
+    `).get(tokenHash);
+
+    if (!record || record.expires_at <= Date.now()) {
+      if (record) db.prepare('DELETE FROM password_reset_tokens WHERE token_hash = ?').run(tokenHash);
+      return res.status(400).json({ error: 'রিসেট লিংকটি সঠিক নয় বা মেয়াদ শেষ হয়েছে। নতুন লিংক নিন।' });
+    }
+
+    const passwordHash = await hashPassword(password);
+    const resetTransaction = db.transaction(() => {
+      const fresh = db.prepare(`
+        SELECT prt.user_id, prt.expires_at, u.email
+        FROM password_reset_tokens prt
+        JOIN users u ON u.id = prt.user_id
+        WHERE prt.token_hash = ?
+        LIMIT 1
+      `).get(tokenHash);
+      if (!fresh || fresh.expires_at <= Date.now()) return null;
+
+      db.prepare(`
+        INSERT INTO password_credentials (user_id, email, password_hash, created_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+          email = excluded.email,
+          password_hash = excluded.password_hash,
+          created_at = excluded.created_at
+      `).run(fresh.user_id, fresh.email, passwordHash, nowIso());
+      db.prepare('DELETE FROM password_reset_tokens WHERE user_id = ?').run(fresh.user_id);
+      return { id: fresh.user_id };
+    });
+    const result = resetTransaction();
+    if (!result) return res.status(400).json({ error: 'রিসেট লিংকটি ইতিমধ্যে ব্যবহার হয়েছে বা মেয়াদ শেষ হয়েছে।' });
+
+    invalidateUserSessions(result.id);
+    req.session.destroy(() => {
+      res.clearCookie('ars.sid', {
+        httpOnly: true,
+        secure: IS_PRODUCTION,
+        sameSite: 'lax'
+      });
+      res.json({ ok: true, message: 'পাসওয়ার্ড পরিবর্তন হয়েছে। নতুন পাসওয়ার্ড দিয়ে লগইন করুন।' });
     });
   } catch (error) {
-    console.error('[google-auth]', error.message);
-    res.redirect('/?notice=auth-error');
+    next(error);
   }
 });
-app.post('/auth/logout', (req, res) => {
+
+app.post('/api/auth/change-password', checkSameOrigin, changePasswordLimiter, requireLogin, async (req, res, next) => {
+  try {
+    const currentPassword = typeof req.body?.currentPassword === 'string' ? req.body.currentPassword : '';
+    const newPassword = typeof req.body?.newPassword === 'string' ? req.body.newPassword : '';
+    const policyError = passwordPolicyError(newPassword);
+    if (policyError) return res.status(400).json({ error: policyError });
+    if (currentPassword.length < 1 || currentPassword.length > 128) {
+      return res.status(400).json({ error: 'বর্তমান পাসওয়ার্ড দিন।' });
+    }
+
+    const row = db.prepare(`
+      SELECT password_hash FROM password_credentials WHERE user_id = ? LIMIT 1
+    `).get(req.session.user.id);
+    if (!row) {
+      return res.status(409).json({
+        error: 'এই অ্যাকাউন্টে এখনো পাসওয়ার্ড সেট করা নেই। আগে Forgot Password দিয়ে ইমেইল যাচাই করে পাসওয়ার্ড সেট করুন।'
+      });
+    }
+    if (!(await verifyPassword(currentPassword, row.password_hash))) {
+      return res.status(401).json({ error: 'বর্তমান পাসওয়ার্ড সঠিক নয়।' });
+    }
+
+    const newHash = await hashPassword(newPassword);
+    db.prepare('UPDATE password_credentials SET password_hash = ?, created_at = ? WHERE user_id = ?')
+      .run(newHash, nowIso(), req.session.user.id);
+    db.prepare('DELETE FROM password_reset_tokens WHERE user_id = ?').run(req.session.user.id);
+    invalidateUserSessions(req.session.user.id, req.sessionID);
+
+    const user = { ...req.session.user };
+    await establishUserSession(req, user);
+    res.json({ ok: true, message: 'পাসওয়ার্ড পরিবর্তন হয়েছে।' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/auth/logout', checkSameOrigin, (req, res) => {
   req.session.destroy(() => {
     res.clearCookie('ars.sid', {
       httpOnly: true,
