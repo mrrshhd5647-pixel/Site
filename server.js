@@ -69,6 +69,11 @@ db.exec(`
     status TEXT NOT NULL DEFAULT 'pending',
     binance_prepay_id TEXT,
     checkout_url TEXT,
+    payment_method TEXT NOT NULL DEFAULT 'legacy',
+    bdpayhub_payment_id TEXT,
+    bdpayhub_amount_minor INTEGER,
+    bdpayhub_mode TEXT,
+    payment_verification_source TEXT,
     note TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
@@ -92,7 +97,27 @@ db.exec(`
     expire INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS idx_sessions_expire ON sessions(expire);
+  CREATE TABLE IF NOT EXISTS bdpayhub_webhook_events (
+    event_id TEXT PRIMARY KEY,
+    payment_id TEXT NOT NULL,
+    received_at TEXT NOT NULL
+  );
 `);
+
+// Additive migrations preserve the existing Railway SQLite volume and order history.
+function ensureColumn(table, column, declaration) {
+  const columns = db.pragma(`table_info(${table})`);
+  if (!columns.some((item) => item.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${declaration}`);
+  }
+}
+ensureColumn('orders', 'payment_method', "TEXT NOT NULL DEFAULT 'legacy'");
+ensureColumn('orders', 'bdpayhub_payment_id', 'TEXT');
+ensureColumn('orders', 'bdpayhub_amount_minor', 'INTEGER');
+ensureColumn('orders', 'bdpayhub_mode', 'TEXT');
+ensureColumn('orders', 'payment_verification_source', 'TEXT');
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_bdpayhub_payment_id ON orders(bdpayhub_payment_id) WHERE bdpayhub_payment_id IS NOT NULL");
+
 class SQLiteSessionStore extends session.Store {
   get(sid, callback) {
     try {
@@ -174,9 +199,9 @@ const orderLimiter = rateLimit({
   standardHeaders: 'draft-7',
   legacyHeaders: false
 });
-// Parse JSON request bodies for app APIs, but preserve the raw Binance webhook body for signature verification.
+// Preserve the exact request body for BDPayHub HMAC signature verification.
 app.use((req, res, next) => {
-  if (req.method === 'POST' && req.path === '/api/binance/webhook') return next();
+  if (req.method === 'POST' && req.path === '/api/bdpayhub/webhook') return next();
   return express.json({ limit: '10kb' })(req, res, next);
 });
 
@@ -228,26 +253,47 @@ function establishUserSession(req, user) {
   });
 }
 
-function createBinanceSignature(timestamp, nonce, body, secret) {
-  const payload = `${timestamp}\n${nonce}\n${body}\n`;
-  return crypto.createHmac('sha512', secret).update(payload).digest('hex').toUpperCase();
+function getBdpayHubConfig(method) {
+  if (!['bkash', 'nagad'].includes(method)) return null;
+  const baseUrl = String(process.env.BDPAYHUB_BASE_URL || '').trim().replace(/\/+$/, '');
+  const prefix = method === 'bkash' ? 'BDPAYHUB_BKASH' : 'BDPAYHUB_NAGAD';
+  const apiKey = String(process.env[`${prefix}_API_KEY`] || '').trim();
+  const webhookSecret = String(process.env[`${prefix}_WEBHOOK_SECRET`] || '').trim();
+  const mode = String(process.env.BDPAYHUB_MODE || 'sandbox').trim().toLowerCase();
+  let validBase = false;
+  try {
+    const parsed = new URL(baseUrl);
+    validBase = parsed.protocol === 'https:' || (!IS_PRODUCTION && ['localhost', '127.0.0.1'].includes(parsed.hostname));
+  } catch {
+    validBase = false;
+  }
+  return {
+    baseUrl,
+    apiKey,
+    webhookSecret,
+    mode: ['live', 'sandbox'].includes(mode) ? mode : 'sandbox',
+    configured: validBase && apiKey.startsWith('bdp_') && webhookSecret.length >= 16
+  };
 }
-function getPaymentSpec() {
-  const fiatAmount = (process.env.BINANCE_PAY_FIAT_AMOUNT || '').trim();
-  const fiatCurrency = (process.env.BINANCE_PAY_FIAT_CURRENCY || '').trim().toUpperCase();
-  if (fiatAmount && fiatCurrency) {
-    const n = Number(fiatAmount);
-    if (!Number.isFinite(n) || n <= 0) throw new Error('BINANCE_PAY_FIAT_AMOUNT must be a positive number.');
-    return { amount: String(fiatAmount), currency: fiatCurrency, mode: 'fiat', body: { fiatAmount: n, fiatCurrency } };
-  }
-  const orderAmount = (process.env.BINANCE_PAY_ORDER_AMOUNT || '').trim();
-  const orderCurrency = (process.env.BINANCE_PAY_ORDER_CURRENCY || '').trim().toUpperCase();
-  if (orderAmount && orderCurrency) {
-    const n = Number(orderAmount);
-    if (!Number.isFinite(n) || n <= 0) throw new Error('BINANCE_PAY_ORDER_AMOUNT must be a positive number.');
-    return { amount: String(orderAmount), currency: orderCurrency, mode: 'crypto', body: { orderAmount: n, currency: orderCurrency } };
-  }
-  throw new Error('Configure Binance Pay fiat amount/currency or crypto amount/currency in .env.');
+
+function getPublicPaymentConfig() {
+  const bkash = getBdpayHubConfig('bkash');
+  const nagad = getBdpayHubConfig('nagad');
+  return {
+    provider: 'BDPayHub',
+    configured: Boolean(bkash?.configured || nagad?.configured),
+    mode: String(process.env.BDPAYHUB_MODE || 'sandbox').trim().toLowerCase() === 'live' ? 'live' : 'sandbox',
+    methods: { bkash: Boolean(bkash?.configured), nagad: Boolean(nagad?.configured) }
+  };
+}
+
+function createBdpayHubSignature(timestamp, body, secret) {
+  return crypto.createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex');
+}
+
+function normalizePhone(value) {
+  const phone = String(value || '').trim().replace(/[()\s-]/g, '');
+  return /^\+?[0-9]{7,15}$/.test(phone) ? phone : '';
 }
 
 function requireLogin(req, res, next) {
@@ -370,24 +416,12 @@ app.post('/auth/logout', checkSameOrigin, (req, res) => {
   });
 });
 app.get('/api/config', (req, res) => {
-  let payment = { configured: false, mode: null, amount: null, currency: null };
-  try {
-    const spec = getPaymentSpec();
-    payment = {
-      configured: Boolean(process.env.BINANCE_PAY_API_KEY && process.env.BINANCE_PAY_SECRET_KEY),
-      mode: spec.mode,
-      amount: spec.amount,
-      currency: spec.currency
-    };
-  } catch {
-    // Public storefront remains viewable before credentials are configured.
-  }
   res.json({
     storeName: 'ARS Store',
     productName: 'Gemini AI Pro',
     durationMonths: Math.max(1, Number(process.env.PRODUCT_DURATION_MONTHS || 18)),
     priceBdt: Math.max(0, Number(process.env.PRODUCT_PRICE_BDT || 350)),
-    payment,
+    payment: getPublicPaymentConfig(),
     supportWhatsAppUrl: process.env.SUPPORT_WHATSAPP_URL || ''
   });
 });
@@ -396,35 +430,38 @@ app.get('/api/me', (req, res) => {
   res.json({ user: (req.session && req.session.user) || null });
 });
 app.post('/api/orders', orderLimiter, checkSameOrigin, requireLogin, async (req, res) => {
-  const whatsapp = typeof req.body?.whatsapp === 'string' ? req.body.whatsapp.trim() : '';
+  const whatsappRaw = typeof req.body?.whatsapp === 'string' ? req.body.whatsapp.trim() : '';
+  const whatsapp = normalizePhone(whatsappRaw);
   const note = typeof req.body?.note === 'string' ? req.body.note.trim().slice(0, 500) : '';
+  const paymentMethod = String(req.body?.paymentMethod || '').trim().toLowerCase();
 
-  if (whatsapp.length < 8 || whatsapp.length > 24 || !/^[+0-9()\-\s]+$/.test(whatsapp)) {
+  if (!whatsapp || whatsappRaw.length < 8 || whatsappRaw.length > 24) {
     return res.status(400).json({ error: 'সঠিক WhatsApp / মোবাইল নম্বর দিন।' });
   }
-  let spec;
-  try {
-    spec = getPaymentSpec();
-  } catch (error) {
+  if (!['bkash', 'nagad'].includes(paymentMethod)) {
+    return res.status(400).json({ error: 'bKash অথবা Nagad পেমেন্ট পদ্ধতি বেছে নিন।' });
+  }
+
+  const gateway = getBdpayHubConfig(paymentMethod);
+  if (!gateway || !gateway.configured) {
     return res.status(503).json({
-      error: 'Binance Pay এখনো কনফিগার করা হয়নি। .env ফাইলের payment settings পরীক্ষা করুন।'
+      error: `${paymentMethod === 'bkash' ? 'bKash' : 'Nagad'} checkout এখনো BDPayHub Variables দিয়ে কনফিগার করা হয়নি।`
     });
   }
 
-  const apiKey = process.env.BINANCE_PAY_API_KEY || '';
-  const secretKey = process.env.BINANCE_PAY_SECRET_KEY || '';
-  if (!apiKey || !secretKey) {
-    return res.status(503).json({ error: 'Binance Pay API credentials .env ফাইলে যোগ করা হয়নি।' });
+  const priceBdt = Math.max(1, Math.round(Number(process.env.PRODUCT_PRICE_BDT || 350)));
+  const amountMinor = priceBdt * 100;
+  if (!Number.isSafeInteger(amountMinor) || amountMinor < 100 || amountMinor > 10000000) {
+    return res.status(503).json({ error: 'পণ্যের মূল্য সঠিকভাবে কনফিগার করা নেই।' });
   }
+
   const orderId = crypto.randomBytes(12).toString('hex');
   const createdAt = nowIso();
-  const priceBdt = Math.max(0, Number(process.env.PRODUCT_PRICE_BDT || 350));
-  const durationMonths = Math.max(1, Number(process.env.PRODUCT_DURATION_MONTHS || 18));
   db.prepare(`
     INSERT INTO orders (
       id, user_id, email, whatsapp, product_id, price_bdt,
-      payment_amount, payment_currency, status, note, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+      payment_amount, payment_currency, payment_method, bdpayhub_mode, status, note, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'BDT', ?, ?, 'pending', ?, ?, ?)
   `).run(
     orderId,
     req.session.user.id,
@@ -432,129 +469,184 @@ app.post('/api/orders', orderLimiter, checkSameOrigin, requireLogin, async (req,
     whatsapp,
     'gemini-ai-pro',
     priceBdt,
-    spec.amount,
-    spec.currency,
+    priceBdt.toFixed(2),
+    paymentMethod,
+    gateway.mode,
     note,
     createdAt,
     createdAt
   );
-  const body = {
-    env: { terminalType: 'WAP' },
-    merchantTradeNo: orderId,
-    description: `ARS Store Gemini AI Pro subscription - ${durationMonths} months`,
-    goodsDetails: [{
-      goodsType: '02',
-      goodsCategory: 'Z000',
-      referenceGoodsId: 'gemini-ai-pro',
-      goodsName: 'Gemini AI Pro Subscription',
-      goodsDetail: `${durationMonths} month digital subscription, subject to seller terms`
-    }],
-    buyer: {
-      buyerEmail: req.session.user.email,
-      buyerBrowserLanguage: 'bn'
-    },
-    returnUrl: `${APP_URL}/payment/success?order=${orderId}`,
-    cancelUrl: `${APP_URL}/payment/cancel?order=${orderId}`,
-    webhookUrl: `${APP_URL}/api/binance/webhook`,
-    ...spec.body
+
+  const webhookUrl = `${APP_URL}/api/bdpayhub/webhook`;
+  const payload = {
+    amount_minor: amountMinor,
+    order_id: orderId,
+    mode: gateway.mode,
+    customer_name: String(req.session.user.name || req.session.user.email.split('@')[0]).slice(0, 80),
+    customer_email: req.session.user.email,
+    customer_phone: whatsapp,
+    reference: orderId,
+    return_url: `${APP_URL}/payment/success?order=${encodeURIComponent(orderId)}`,
+    cancel_url: `${APP_URL}/payment/cancel?order=${encodeURIComponent(orderId)}`,
+    webhook_url: webhookUrl
   };
-  const bodyText = JSON.stringify(body);
-  const timestamp = String(Date.now());
-  const nonce = crypto.randomBytes(16).toString('hex');
-  const signature = createBinanceSignature(timestamp, nonce, bodyText, secretKey);
-  const baseUrl = (process.env.BINANCE_PAY_BASE_URL || 'https://bpay.binanceapi.com').replace(/\/+$/, '');
+
   try {
-    const response = await fetch(`${baseUrl}/binancepay/openapi/v3/order`, {
+    const response = await fetch(`${gateway.baseUrl}/api/v1/payments`, {
       method: 'POST',
       headers: {
+        Authorization: `Bearer ${gateway.apiKey}`,
         'Content-Type': 'application/json',
-        'BinancePay-Timestamp': timestamp,
-        'BinancePay-Nonce': nonce,
-        'BinancePay-Certificate-SN': apiKey,
-        'BinancePay-Signature': signature
+        Accept: 'application/json',
+        'Idempotency-Key': orderId
       },
-      body: bodyText,
-      signal: AbortSignal.timeout(15000)
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15000),
+      redirect: 'error'
     });
     const result = await response.json().catch(() => ({}));
-    if (!response.ok || result.status !== 'SUCCESS' || !result.data?.checkoutUrl) {
-      console.error('[binance-create-order]', result.code || response.status, result.errorMessage || '');
+    const paymentUrl = typeof result.payment_url === 'string' ? result.payment_url : '';
+    let safePaymentUrl = false;
+    try {
+      const target = new URL(paymentUrl);
+      const gatewayOrigin = new URL(gateway.baseUrl).origin;
+      safePaymentUrl = target.protocol === 'https:' && target.origin === gatewayOrigin;
+    } catch {
+      safePaymentUrl = false;
+    }
+
+    if (!response.ok || !result.id || !safePaymentUrl ||
+        Number(result.order_amount_minor) !== amountMinor ||
+        Number(result.amount_minor) < amountMinor ||
+        String(result.currency || '').toUpperCase() !== 'BDT' ||
+        String(result.mode || '').toLowerCase() !== gateway.mode) {
+      console.error('[bdpayhub-create-payment]', response.status, result.error || result.message || 'Invalid gateway response');
       db.prepare("UPDATE orders SET status = 'failed', updated_at = ? WHERE id = ?")
         .run(nowIso(), orderId);
       return res.status(502).json({
-        error: 'Binance Pay অর্ডার তৈরি করতে পারেনি। Merchant settings, supported currency এবং API credentials যাচাই করুন।'
+        error: 'BDPayHub checkout তৈরি করতে পারেনি। Gateway URL, API key, brand account ও webhook settings পরীক্ষা করুন।'
       });
     }
+
     db.prepare(`
       UPDATE orders
-      SET binance_prepay_id = ?, checkout_url = ?, updated_at = ?
+      SET bdpayhub_payment_id = ?, bdpayhub_amount_minor = ?, checkout_url = ?,
+          payment_amount = ?, payment_currency = 'BDT', updated_at = ?
       WHERE id = ?
-    `).run(result.data.prepayId || null, result.data.checkoutUrl, nowIso(), orderId);
-    res.json({ orderId, checkoutUrl: result.data.checkoutUrl });
+    `).run(
+      String(result.id),
+      Number(result.amount_minor),
+      paymentUrl,
+      (Number(result.amount_minor) / 100).toFixed(2),
+      nowIso(),
+      orderId
+    );
+    return res.json({ orderId, checkoutUrl: paymentUrl, paymentMethod });
   } catch (error) {
-    console.error('[binance-create-order]', error.message);
+    console.error('[bdpayhub-create-payment]', error instanceof Error ? error.message : 'Gateway request failed');
     db.prepare("UPDATE orders SET status = 'failed', updated_at = ? WHERE id = ?")
       .run(nowIso(), orderId);
-    res.status(502).json({ error: 'Binance Pay-এ সংযোগ করা যায়নি। পরে আবার চেষ্টা করুন।' });
+    return res.status(502).json({ error: 'BDPayHub-এ সংযোগ করা যায়নি। Gateway configuration যাচাই করে আবার চেষ্টা করুন।' });
   }
 });
-// Verify Binance's signed webhook before reading or updating any order.
-app.post('/api/binance/webhook', express.raw({ type: 'application/json', limit: '100kb' }), (req, res) => {
-  const timestamp = req.get('binancepay-timestamp') || '';
-  const nonce = req.get('binancepay-nonce') || '';
-  const signature = req.get('binancepay-signature') || '';
-  const secret = process.env.BINANCE_PAY_SECRET_KEY || '';
-  if (!secret || !Buffer.isBuffer(req.body) || !timestamp || !nonce || !signature) {
-    return res.status(400).json({ returnCode: 'FAIL', returnMessage: 'Missing webhook signature data' });
+
+// Verify BDPayHub's signed event before changing any order status.
+app.post('/api/bdpayhub/webhook', express.raw({ type: 'application/json', limit: '100kb' }), (req, res) => {
+  const timestamp = req.get('bdpayhub-timestamp') || '';
+  const eventHeader = req.get('bdpayhub-event-id') || '';
+  const signature = (req.get('bdpayhub-signature') || '').toLowerCase();
+  if (!Buffer.isBuffer(req.body) || !timestamp || !eventHeader || !/^[a-f0-9]{64}$/.test(signature)) {
+    return res.status(400).json({ error: 'Missing or invalid webhook signature data.' });
+  }
+  const seconds = Number(timestamp);
+  if (!Number.isSafeInteger(seconds) || Math.abs(Math.floor(Date.now() / 1000) - seconds) > 300) {
+    return res.status(401).json({ error: 'Webhook timestamp is expired.' });
   }
 
-  const expected = createBinanceSignature(timestamp, nonce, req.body.toString('utf8'), secret);
-  if (!safeEqual(signature.toUpperCase(), expected)) {
-    return res.status(401).json({ returnCode: 'FAIL', returnMessage: 'Invalid signature' });
-  }
+  const rawBody = req.body.toString('utf8');
+  let event;
   try {
-    const event = JSON.parse(req.body.toString('utf8'));
-    const data = typeof event.data === 'string'
-      ? JSON.parse(event.data)
-      : (event.data || event);
+    event = JSON.parse(rawBody);
+  } catch {
+    return res.status(400).json({ error: 'Invalid webhook JSON.' });
+  }
+  const eventId = String(event.event_id || '');
+  const paymentId = String(event.payment_id || '');
+  if (!eventId || eventId !== eventHeader || !paymentId) {
+    return res.status(400).json({ error: 'Webhook event identifiers do not match.' });
+  }
 
-    const status = event.bizStatus || data.bizStatus || '';
-    const merchantTradeNo = data.merchantTradeNo || event.merchantTradeNo || '';
-    // Only the verified payment-success event may mark an order paid.
-    if (status === 'PAY_SUCCESS' && merchantTradeNo) {
-      const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(merchantTradeNo);
-      if (order) {
-        const receivedCurrency = String(data.fiatCurrency || data.currency || '').toUpperCase();
-        const receivedAmountRaw = data.fiatCurrency
-          ? data.fiatAmount
-          : (data.orderAmount ?? data.totalFee);
-        if (receivedCurrency && receivedAmountRaw != null) {
-          const currencyMatches = receivedCurrency === order.payment_currency.toUpperCase();
-          const amountMatches = Math.abs(Number(receivedAmountRaw) - Number(order.payment_amount)) < 0.0000001;
-          if (!currencyMatches || !amountMatches) {
-            console.error('[binance-webhook] Amount/currency mismatch for order', merchantTradeNo);
-            return res.status(400).json({ returnCode: 'FAIL', returnMessage: 'Order amount mismatch' });
-          }
-        }
-        db.prepare(`
-          UPDATE orders
-          SET status = CASE WHEN status = 'fulfilled' THEN status ELSE 'paid' END,
-              paid_at = COALESCE(paid_at, ?),
-              updated_at = ?
-          WHERE id = ?
-        `).run(nowIso(), nowIso(), merchantTradeNo);
-      }
-    }
-    return res.json({ returnCode: 'SUCCESS', returnMessage: null });
+  let order = db.prepare(`
+    SELECT id, status, price_bdt, payment_method, bdpayhub_payment_id, bdpayhub_amount_minor, bdpayhub_mode
+    FROM orders WHERE bdpayhub_payment_id = ? LIMIT 1
+  `).get(paymentId);
+  if (!order && typeof event.order_id === 'string' && event.order_id.length <= 100) {
+    order = db.prepare(`
+      SELECT id, status, price_bdt, payment_method, bdpayhub_payment_id, bdpayhub_amount_minor, bdpayhub_mode
+      FROM orders WHERE id = ? LIMIT 1
+    `).get(event.order_id);
+  }
+  if (!order) return res.status(404).json({ error: 'Payment not found.' });
+  if (order.bdpayhub_payment_id && order.bdpayhub_payment_id !== paymentId) {
+    return res.status(409).json({ error: 'A different gateway payment is already attached to this order.' });
+  }
+
+  const gateway = getBdpayHubConfig(order.payment_method);
+  if (!gateway || !gateway.webhookSecret) return res.status(503).json({ error: 'Webhook secret is not configured.' });
+  const expected = createBdpayHubSignature(timestamp, rawBody, gateway.webhookSecret);
+  if (!safeEqual(signature, expected.toLowerCase())) {
+    return res.status(401).json({ error: 'Invalid webhook signature.' });
+  }
+
+  if (event.event !== 'payment.paid') return res.json({ ok: true, ignored: true });
+  const storedMinor = Number(order.bdpayhub_amount_minor || 0);
+  const eventAmountMinor = Number(event.amount_minor);
+  const originalMinor = Number(event.order_amount_minor ?? (Number(order.price_bdt) * 100));
+  const expectedOriginalMinor = Number(order.price_bdt) * 100;
+  const receivedMinor = Number(event.received_amount_minor);
+  const currency = String(event.currency || '').toUpperCase();
+  const source = String(event.verification_source || '');
+  const amountMatches = Number.isSafeInteger(eventAmountMinor) && eventAmountMinor >= 1 &&
+    (storedMinor > 0 ? eventAmountMinor === storedMinor : eventAmountMinor >= expectedOriginalMinor);
+  if (!amountMatches || !Number.isSafeInteger(originalMinor) || originalMinor !== expectedOriginalMinor ||
+      currency !== 'BDT' || !Number.isSafeInteger(receivedMinor) || receivedMinor < eventAmountMinor ||
+      !source || (String(order.bdpayhub_mode || gateway.mode) === 'live' && source !== 'SMS_MATCHED')) {
+    console.error('[bdpayhub-webhook] Amount, currency or verification source mismatch for order', order.id);
+    return res.status(400).json({ error: 'Payment amount or verification source mismatch.' });
+  }
+
+  try {
+    const processEvent = db.transaction(() => {
+      const existing = db.prepare('SELECT event_id FROM bdpayhub_webhook_events WHERE event_id = ?').get(eventId);
+      if (existing) return 'duplicate';
+      db.prepare('INSERT INTO bdpayhub_webhook_events (event_id, payment_id, received_at) VALUES (?, ?, ?)')
+        .run(eventId, paymentId, nowIso());
+      db.prepare(`
+        UPDATE orders
+        SET status = CASE WHEN status = 'fulfilled' THEN status ELSE 'paid' END,
+            bdpayhub_payment_id = COALESCE(bdpayhub_payment_id, ?),
+            bdpayhub_amount_minor = COALESCE(bdpayhub_amount_minor, ?),
+            bdpayhub_mode = COALESCE(bdpayhub_mode, ?),
+            payment_verification_source = ?,
+            paid_at = COALESCE(paid_at, ?),
+            updated_at = ?
+        WHERE id = ? AND (bdpayhub_payment_id IS NULL OR bdpayhub_payment_id = ?)
+          AND status IN ('pending', 'failed', 'paid', 'fulfilled')
+      `).run(paymentId, eventAmountMinor, order.bdpayhub_mode || gateway.mode, source, nowIso(), nowIso(), order.id, paymentId);
+      return 'processed';
+    });
+    const result = processEvent();
+    return res.json({ ok: true, duplicate: result === 'duplicate' });
   } catch (error) {
-    console.error('[binance-webhook]', error.message);
-    return res.status(400).json({ returnCode: 'FAIL', returnMessage: 'Invalid payload' });
+    console.error('[bdpayhub-webhook]', error instanceof Error ? error.message : 'Webhook processing failed');
+    return res.status(500).json({ error: 'Webhook could not be processed.' });
   }
 });
+
 app.get('/api/orders/:id', requireLogin, (req, res) => {
   const order = db.prepare(`
     SELECT id, product_id, price_bdt, payment_amount, payment_currency,
-           status, created_at, paid_at, fulfilled_at
+           payment_method, payment_verification_source, status, created_at, paid_at, fulfilled_at
     FROM orders WHERE id = ? AND user_id = ?
   `).get(req.params.id, req.session.user.id);
 
@@ -588,7 +680,7 @@ app.get('/api/admin/backup', requireAdmin, async (req, res, next) => {
 app.get('/api/admin/orders', requireAdmin, (req, res) => {
   const rows = db.prepare(`
     SELECT id, email, whatsapp, product_id, price_bdt, payment_amount,
-           payment_currency, status, note, created_at, paid_at, fulfilled_at
+           payment_currency, payment_method, payment_verification_source, status, note, created_at, paid_at, fulfilled_at
     FROM orders
     ORDER BY created_at DESC
     LIMIT 200

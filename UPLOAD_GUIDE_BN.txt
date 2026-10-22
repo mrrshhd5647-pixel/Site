@@ -1,0 +1,47 @@
+ARS Store — BDPayHub bKash/Nagad Integration
+============================================
+
+এই ZIP-এ সম্পূর্ণ ARS Store source project আছে। Binance checkout কোড বন্ধ করা হয়েছে; checkout-এ শুধু bKash ও Nagad option আছে। Email/password account system এবং database backup button রাখা হয়েছে।
+
+প্রথমে যা করবেন
+----------------
+1. বর্তমান GitHub repository ও Railway database-এর backup রেখে দিন।
+2. ZIP extract করুন। ভেতরের `ars-store` folder খুলুন।
+3. ওই folder-এর সব project files GitHub repository root-এ upload/replace করুন। `ars-store` folder-টিকেই nested folder হিসেবে রাখবেন না; folder-এর ভেতরের files root-এ যাবে।
+4. `.env` বা কোনো real secret GitHub-এ upload করবেন না। `.env.example` শুধু sample.
+5. GitHub commit করুন এবং Railway deployment সফল হওয়া পর্যন্ত অপেক্ষা করুন।
+6. Railway Volume-এর mount path `/data` এবং `DB_PATH=/data/ars-store.sqlite` আগের মতো রাখুন। Volume বা database file delete করবেন না।
+
+Railway Variables
+-----------------
+পুরোনো `APP_URL`, `SESSION_SECRET`, `ADMIN_TOKEN`, `DB_PATH`, `PRODUCT_PRICE_BDT`, `PRODUCT_DURATION_MONTHS`, `SUPPORT_WHATSAPP_URL` ঠিক রাখুন। `APP_URL`-এর value আপনার Railway Networking-এর exact public HTTPS domain হতে হবে, শেষে slash থাকবে না।
+
+এরপর নিচের variables যোগ করুন; আসল values BDPayHub dashboard থেকে নিতে হবে:
+
+BDPAYHUB_BASE_URL=https://YOUR-PUBLIC-BDPAYHUB-DOMAIN
+BDPAYHUB_MODE=sandbox
+BDPAYHUB_BKASH_API_KEY=bdp_...
+BDPAYHUB_BKASH_WEBHOOK_SECRET=...
+BDPAYHUB_NAGAD_API_KEY=bdp_...
+BDPAYHUB_NAGAD_WEBHOOK_SECRET=...
+
+BDPayHub setup
+--------------
+- bKash Personal receiving account দিয়ে একটি Brand/Store তৈরি করুন এবং ওই brand-এর default account bKash রাখুন।
+- Nagad Personal receiving account দিয়ে আরেকটি Brand/Store তৈরি করুন এবং ওই brand-এর default account Nagad রাখুন।
+- দুই brand-এর website URL-এ ARS Store-এর exact HTTPS origin দিন।
+- প্রতিটি brand-এর আলাদা Store API key ও webhook signing secret ব্যবহার করুন।
+- দুই brand-এ একই webhook receiver URL register/activate করুন:
+  https://YOUR-ARS-STORE-DOMAIN.up.railway.app/api/bdpayhub/webhook
+- BDPayHub admin settings-এ ARS Store hostname approve করুন। Gateway public না হলে server-to-server request কাজ করবে না।
+
+Testing
+-------
+1. প্রথমে `BDPAYHUB_MODE=sandbox` রাখুন।
+2. ARS Store-এ email/password দিয়ে login করুন; checkout থেকে bKash বা Nagad বেছে নিন।
+3. BDPayHub sandbox checkout simulate করুন এবং ARS Store `/admin`-এ order status `paid` হয়েছে কি না দেখুন।
+4. Live mode-এ যাবেন না যতক্ষণ না receiving phone/app install, pairing, recent heartbeat এবং বাস্তব ছোট bKash/Nagad receipt test সফল হয়।
+
+সীমাবদ্ধতা
+----------
+BDPayHub-এর বর্তমান workflow Personal account-এর incoming SMS matching ব্যবহার করে; এটি official bKash/Nagad Merchant API confirmation নয়। Android companion APK-এর Play Protect blocker আগে নিরাপদভাবে সমাধান করতে হবে। Sandbox webhook পাঠানোর জন্য এই handoff-এর gateway source-এ অতিরিক্ত patch আছে; সেই gateway source-ও update/deploy করতে হবে, নইলে sandbox paid status ARS Store-এ নাও পৌঁছাতে পারে।

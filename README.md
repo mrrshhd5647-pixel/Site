@@ -1,222 +1,92 @@
-# ARS Store — Gemini AI Pro storefront starter
+# ARS Store — bKash / Nagad via BDPayHub
 
-A responsive Node.js storefront inspired by the supplied screenshots. It includes:
+This Railway-ready Node.js storefront uses email/password registration and login. Binance Pay order creation is disabled; the checkout offers only bKash and Nagad through the BDPayHub store API.
 
-- Bengali-first responsive product page and mobile sticky checkout bar
-- Google sign-in using OAuth 2.0
-- Binance Pay Create Order API integration (v3)
-- Signed Binance Pay webhook verification before an order can become `paid`
-- SQLite persistence for users, orders and sessions
-- Private admin page for viewing orders and marking **paid** orders as fulfilled
-- No collection or storage of Google passwords
+## Important status
 
-This is a **starter project**, not a deployed/live store. Real Google login and Binance Pay require credentials from your own accounts and a publicly reachable HTTPS domain.
+- The code integration is prepared, but it does **not** mean live payments are already enabled.
+- The BDPayHub deployment must be publicly reachable from the ARS Store server and customer browser.
+- BDPayHub's current source documents Personal bKash/Nagad receipt matching through its Android companion app. It does not include active official bKash/Nagad Merchant API adapters.
+- Live checkout requires a paired receiving phone with a recent heartbeat and successful real-SIM tests. The supplied companion APK has previously been blocked by Play Protect, so keep `BDPAYHUB_MODE=sandbox` until that blocker is resolved safely.
+- BDPayHub's `SMS_MATCHED` result is receipt-SMS matching, not direct confirmation from the official bKash/Nagad API. Do not describe it as official provider-side settlement confirmation.
 
-## Requirements
+## 1. Preserve the current database
 
-- Node.js 20 or newer
-- A Google OAuth Web application client
-- A Binance Pay merchant account with API access
-- HTTPS and a persistent disk for production hosting
+Keep the existing Railway Volume mounted at `/data` and keep:
+
+```text
+DB_PATH=/data/ars-store.sqlite
+```
+
+The server adds the new payment columns and webhook-event table using additive SQLite migrations. It does not delete existing users/orders. Do not delete the volume or replace the database file. Take a backup before deploying.
+
+## 2. Prepare BDPayHub
+
+The API key is tied to a Brand/Store. To offer both methods without exposing account IDs in the storefront, configure two provider-specific brands:
+
+1. In **View Gateways**, add an active bKash **Personal** receiving account and an active Nagad **Personal** receiving account.
+2. In **Brands**, create a bKash brand with the ARS Store's exact HTTPS domain and the bKash account as its default account. Create a second brand with the same ARS Store domain and Nagad as its default account.
+3. In each brand, create a separate Store API key. Keep each key on the Railway server only.
+4. In **Webhook Settings**, register this exact URL for each brand:
+
+   `https://YOUR-ARS-STORE-DOMAIN.up.railway.app/api/bdpayhub/webhook`
+
+   Activate the webhook and use a long random signing secret for each brand. Copy the same respective secret into the matching Railway variable below.
+5. Approve the ARS Store public hostname in BDPayHub's webhook allowed-host settings.
+6. Confirm the BDPayHub site is actually public. A private/owner-only Site will not work as a checkout API for unauthenticated customers or server-to-server requests.
+
+## 3. Configure Railway Variables
+
+Keep existing `SESSION_SECRET`, `ADMIN_TOKEN`, `APP_URL`, `DB_PATH`, `PRODUCT_PRICE_BDT`, `PRODUCT_DURATION_MONTHS`, and `SUPPORT_WHATSAPP_URL` values. Do not put secrets in GitHub.
+
+Set these variables in Railway → `Site` → **Variables**:
+
+```text
+BDPAYHUB_BASE_URL=https://YOUR-PUBLIC-BDPAYHUB-DOMAIN
+BDPAYHUB_MODE=sandbox
+BDPAYHUB_BKASH_API_KEY=bdp_REPLACE_WITH_BKASH_BRAND_KEY
+BDPAYHUB_BKASH_WEBHOOK_SECRET=REPLACE_WITH_BKASH_WEBHOOK_SIGNING_SECRET
+BDPAYHUB_NAGAD_API_KEY=bdp_REPLACE_WITH_NAGAD_BRAND_KEY
+BDPAYHUB_NAGAD_WEBHOOK_SECRET=REPLACE_WITH_NAGAD_WEBHOOK_SIGNING_SECRET
+```
+
+- `BDPAYHUB_BASE_URL` is the gateway's public HTTPS origin only, without `/api/...` or a trailing path.
+- Each `BDPAYHUB_*_API_KEY` must be a real key generated for the matching provider-specific Brand/Store.
+- Each webhook secret must match the signing secret saved in that brand's webhook configuration.
+- Do not send passwords, API keys, or webhook secrets in chat or screenshots.
+
+Save variables and wait for a successful Railway deployment.
+
+## 4. Test in sandbox first
+
+1. Visit the ARS Store and create/log in to an account with email/password.
+2. Click **অর্ডার করুন** and select bKash or Nagad.
+3. The server creates the invoice through `POST /api/v1/payments` and redirects the customer to the BDPayHub checkout URL.
+4. A paid order is accepted only after the server verifies the signed BDPayHub webhook, event timestamp/id, BDT amount and the expected payment record.
+5. Check `/admin` using `ADMIN_TOKEN`; fulfillment is still manual and only enabled for `paid` orders.
+
+Note: the BDPayHub source in the supplied handoff currently simulates a sandbox invoice as `PAID` without enqueueing a webhook. Unless that gateway source is updated to emit a sandbox webhook, a sandbox payment may show as pending in ARS Store even though the BDPayHub sandbox page says paid. Do not treat that as a real payment.
+
+## 5. Live mode checklist
+
+Do **not** switch to `BDPAYHUB_MODE=live` until all are true:
+
+- The BDPayHub Site is publicly reachable over HTTPS.
+- Both provider-specific Store API keys and webhook secrets are correct.
+- The receiving Android companion is installed from an approved distribution path, paired to the right SIM/account, and has a recent heartbeat.
+- Small real bKash and Nagad transfers have been matched on the receiving phone and the signed webhook has successfully changed the corresponding ARS Store order to `paid`.
+- You have verified refund/support handling and can provide the advertised digital product lawfully.
+
+The payment page redirect alone never marks an order paid. A signed webhook is required. Existing legacy Binance-related database columns are retained only for compatibility with old records; no Binance checkout API call is made by this version.
 
 ## Run locally
+
+Requires Node.js 20+ and the existing dependencies in `package.json`.
 
 ```bash
 npm install
 cp .env.example .env
-```
-
-Generate strong secrets:
-
-```bash
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
-```
-
-Put one generated value in `SESSION_SECRET` and another in `ADMIN_TOKEN`. Edit `.env`, then run:
-
-```bash
 npm start
 ```
 
-Open `http://localhost:3000`.
-
-The product page is visible before credentials are configured, but Google login and payment will not work until you set them up.
-
-## Deploy from GitHub to Railway
-
-The repository includes `Dockerfile`, `railway.json`, and `/health` for Railway deployment. The app listens on Railway's `PORT` environment variable.
-
-### 1. Push the project to GitHub
-
-1. Extract the ZIP and create a new empty repository on GitHub.
-2. Upload the project files to the repository root (including `Dockerfile` and `railway.json`).
-3. Do **not** upload `.env`, API keys, Google client secrets, or a local SQLite database. `.gitignore` and `.dockerignore` exclude these.
-
-You can also use Git locally:
-
-```bash
-git init
-git add .
-git commit -m "Prepare ARS Store for Railway"
-git branch -M main
-git remote add origin https://github.com/YOUR-USERNAME/YOUR-REPOSITORY.git
-git push -u origin main
-```
-
-### 2. Create the Railway service
-
-1. Sign in at [Railway](https://railway.com/).
-2. Choose **New Project → Deploy from GitHub repo** and select the repository.
-3. Railway should detect the included Dockerfile and build the app.
-4. In the service settings, create a public domain under **Networking → Public Networking → Generate Domain**.
-5. Open **Variables** and add the variables listed below.
-
-### 3. Add a persistent volume
-
-SQLite data must not live only in a disposable container filesystem. In Railway, add a Volume to this service and mount it at exactly:
-
-```text
-/data
-```
-
-Set `DB_PATH=/data/ars-store.sqlite` in Railway Variables. Without the volume, database contents can be lost when the service is redeployed or recreated.
-
-### 4. Configure Railway Variables
-
-Set these in Railway's service **Variables** panel. Generate long random values for the secrets.
-
-```text
-NODE_ENV=production
-APP_URL=https://YOUR-RAILWAY-DOMAIN.up.railway.app
-DB_PATH=/data/ars-store.sqlite
-SESSION_SECRET=YOUR_LONG_RANDOM_SECRET
-ADMIN_TOKEN=ANOTHER_LONG_RANDOM_SECRET
-GOOGLE_CLIENT_ID=your-google-oauth-client-id
-GOOGLE_CLIENT_SECRET=your-google-oauth-client-secret
-PRODUCT_PRICE_BDT=350
-PRODUCT_DURATION_MONTHS=18
-SUPPORT_WHATSAPP_URL=https://wa.me/YOUR_FULL_INTERNATIONAL_NUMBER
-BINANCE_PAY_API_KEY=your-binance-pay-api-key-or-certificate-sn
-BINANCE_PAY_SECRET_KEY=your-binance-pay-secret
-BINANCE_PAY_BASE_URL=https://bpay.binanceapi.com
-```
-
-Also configure **one** Binance amount mode after checking what your merchant account supports:
-
-- Fiat mode: `BINANCE_PAY_FIAT_AMOUNT=350` and `BINANCE_PAY_FIAT_CURRENCY=BDT`, only if BDT is supported for your merchant account.
-- Crypto mode: leave both fiat variables unset/empty and set `BINANCE_PAY_ORDER_AMOUNT` and `BINANCE_PAY_ORDER_CURRENCY` to the exact supported crypto amount/currency. Do not guess the conversion rate.
-
-After changing `APP_URL` or Variables, redeploy the service if Railway does not automatically redeploy it.
-
-### 5. Set the Google OAuth redirect URI
-
-In Google Cloud Console, add this exact authorized redirect URI, replacing the example domain with your Railway public domain:
-
-```text
-https://YOUR-RAILWAY-DOMAIN.up.railway.app/auth/google/callback
-```
-
-The `APP_URL` origin must match the public Railway domain exactly, without a trailing path. The app's Google login will not work until these values match.
-
-### 6. Configure Binance Pay webhook
-
-Configure the merchant-side notification/webhook URL as:
-
-```text
-https://YOUR-RAILWAY-DOMAIN.up.railway.app/api/binance/webhook
-```
-
-The app creates Binance Pay orders server-side and uses a signed webhook to confirm payment. A successful redirect to the return page is not, by itself, proof of payment. Run a full test payment before taking real orders.
-
-### 7. Check the deployment
-
-- Visit `https://YOUR-RAILWAY-DOMAIN.up.railway.app/` for the storefront.
-- Visit `https://YOUR-RAILWAY-DOMAIN.up.railway.app/health`; a healthy service returns `{"status":"ok"}`.
-- Visit `/admin` and enter the `ADMIN_TOKEN` value to view orders.
-- Check Railway **Deployments → Logs** if the build or start fails.
-
-Never commit `.env` or paste secrets into GitHub issues, screenshots, or public logs.
-
-## Google sign-in
-
-1. Open [Google Cloud Console](https://console.cloud.google.com/).
-2. Create/select a project and configure the OAuth consent screen.
-3. Create an OAuth client with application type **Web application**.
-4. Add this authorized redirect URI for local testing:
-
-   `http://localhost:3000/auth/google/callback`
-
-5. Put the client ID and client secret in `.env` as `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
-6. For production, add the production callback URL in Google Cloud Console and set `APP_URL` to the exact public HTTPS origin.
-
-The server requests only `openid`, `email`, and `profile`. It does not store Google access tokens or ask the customer for their Google password.
-
-Official guide: https://developers.google.com/identity/protocols/oauth2/web-server
-
-## Binance Pay setup
-
-1. Apply for and configure your own Binance Pay merchant/API access.
-2. Put the merchant API identity key and secret in:
-   - `BINANCE_PAY_API_KEY`
-   - `BINANCE_PAY_SECRET_KEY`
-3. Set `APP_URL` to your public HTTPS URL. Binance must be able to reach:
-
-   `https://YOUR-DOMAIN/api/binance/webhook`
-
-4. The app creates orders through `POST /binancepay/openapi/v3/order`, redirects the customer to Binance's hosted `checkoutUrl`, and verifies the signed webhook before marking an order as paid.
-5. Test the full flow with the merchant's supported test procedure before accepting real payments.
-
-Official docs:
-- Create order v3: https://developers.binance.com/en/docs/products/binance-pay-merchant/api-order-create-v3
-- API signing rules: https://developers.binance.com/en/docs/products/binance-pay-merchant/api-common
-
-### Currency configuration matters
-
-The product page defaults to **৳350 BDT**. Binance Pay's supported fiat currencies depend on your merchant setup. `.env.example` shows BDT fiat mode as an example, but **do not assume BDT is supported for your account**.
-
-- If BDT is supported, configure `BINANCE_PAY_FIAT_AMOUNT=350` and `BINANCE_PAY_FIAT_CURRENCY=BDT`.
-- If not, clear both fiat settings and set `BINANCE_PAY_ORDER_AMOUNT` and `BINANCE_PAY_ORDER_CURRENCY` to the actual supported crypto amount/currency you intend to charge.
-- Do not guess an exchange rate. Make sure the amount charged in Binance matches the price and terms shown to customers. In crypto mode, the checkout modal displays the configured crypto amount.
-
-The merchant profile may also need API permissions/IP allowlisting. Keep all keys server-side and never add them to `public/app.js`.
-
-## Product details and support
-
-Edit these variables in `.env`:
-
-- `PRODUCT_PRICE_BDT=350`
-- `PRODUCT_DURATION_MONTHS=18`
-- `SUPPORT_WHATSAPP_URL=https://wa.me/COUNTRYCODEPHONENUMBER`
-
-Use a real WhatsApp support link. Do not leave a placeholder phone number in a live site.
-
-Product feature availability and subscription terms can change by country and plan. Edit the page copy to match the **authorized product you can actually supply**. Do not promise storage, video features, a duration, or a replacement guarantee unless your supplier/plan explicitly supports it. ARS Store is not represented as an official Google website or Google partner.
-
-## Admin orders
-
-Open `/admin`, enter the `ADMIN_TOKEN` value from `.env`, and load orders.
-
-- Orders only become `paid` after a valid signed Binance webhook.
-- The admin UI only enables fulfillment for `paid` orders.
-- Fulfillment is manual. The starter does not create Google subscriptions or automatically deliver accounts.
-- Use the admin token only over HTTPS. Rotate it if exposed.
-
-## Production checklist
-
-- Use HTTPS and set `NODE_ENV=production`.
-- Use a strong, unique `SESSION_SECRET` and `ADMIN_TOKEN`.
-- Set the correct production `APP_URL` and Google redirect URI.
-- Store `.env` outside version control; never commit credentials.
-- Use a persistent disk for the SQLite database and back it up.
-- Confirm Binance Pay currency support, payment notifications and refund procedures.
-- Add your business identity, terms, privacy notice, refund policy and support contact.
-- Confirm that you have the right to resell/activate the digital subscription under the relevant supplier/platform terms.
-- Have a qualified adult/business owner handle merchant onboarding, tax and legal obligations where required.
-
-## Important limitations
-
-- This is a starter, not a complete audited commerce platform.
-- No automated subscription activation is included.
-- A customer returning from Binance is **not** treated as proof of payment. The server relies on the signed webhook.
-- The example's BDT setting may need changing based on Binance merchant support.
-- Add monitoring, backups, refund handling and additional operational controls before production use.
+For local testing, use a local HTTPS tunnel only if you understand the webhook/security implications; BDPayHub's live URLs require HTTPS. Do not use real payments during local development.
