@@ -297,3 +297,19 @@ h1 { font-size: clamp(30px, 4vw, 42px); letter-spacing: -.045em; line-height: 1.
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; }
 }
+
+
+/* BDPayHub checkout methods */
+.payment-options { display: grid; gap: 10px; margin: 14px 0 20px; }
+.payment-option { display: flex; align-items: center; gap: 12px; min-width: 0; padding: 12px 14px; border: 1px solid #dbe2ef; border-radius: 16px; background: #fff; cursor: pointer; transition: border-color .15s ease, background .15s ease, box-shadow .15s ease; }
+.payment-option.is-selected { border-color: #8b5cf6; background: #faf7ff; box-shadow: 0 0 0 2px rgba(139, 92, 246, .08); }
+.payment-option.is-unavailable { opacity: .55; cursor: not-allowed; }
+.payment-option input { width: 18px; height: 18px; margin: 0; flex: 0 0 auto; accent-color: #7c3aed; }
+.wallet-mark { display: inline-grid; place-items: center; width: 42px; height: 42px; border-radius: 13px; color: #fff; font-weight: 800; font-size: 22px; flex: 0 0 auto; }
+.wallet-bkash { background: #e2136e; }
+.wallet-nagad { background: #f7941d; color: #171717; }
+.payment-option-copy { display: flex; flex: 1; flex-direction: column; gap: 3px; min-width: 0; }
+.payment-option-copy strong { color: #151b2d; font-size: 15px; }
+.payment-option-copy small { color: #69758e; font-size: 12px; line-height: 1.4; }
+.payment-option .selected-check { display: none; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: #059669; color: #fff; font-weight: 800; flex: 0 0 auto; }
+.payment-option.is-selected .selected-check { display: grid; }

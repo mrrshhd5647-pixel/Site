@@ -5,7 +5,7 @@ const toast = $('#toast');
 let config = {
   priceBdt: 350,
   durationMonths: 18,
-  payment: { configured: false, mode: null, amount: null, currency: null },
+  payment: { configured: false, mode: 'sandbox', methods: { bkash: false, nagad: false } },
   supportWhatsAppUrl: ''
 };
 let currentUser = null;
@@ -22,6 +22,34 @@ function moneyBdt(value) {
   return `৳${Number(value).toLocaleString('en-US')}`;
 }
 
+function updateMethodAvailability() {
+  const methods = config.payment?.methods || {};
+  const available = ['bkash', 'nagad'].filter((method) => Boolean(methods[method]));
+  for (const method of ['bkash', 'nagad']) {
+    const input = $(`#payment${method[0].toUpperCase()}${method.slice(1)}`);
+    const card = $(`#${method}Option`);
+    const status = $(`#${method}Status`);
+    const enabled = Boolean(methods[method]);
+    input.disabled = !enabled;
+    card.classList.toggle('is-unavailable', !enabled);
+    status.textContent = enabled
+      ? (config.payment.mode === 'live' ? 'লাইভ পেমেন্ট' : 'Sandbox / পরীক্ষামূলক')
+      : 'Gateway setup বাকি';
+  }
+  const selected = document.querySelector('input[name="paymentMethod"]:checked');
+  if (!selected || selected.disabled) {
+    const first = available[0];
+    if (first) $(`#payment${first[0].toUpperCase()}${first.slice(1)}`).checked = true;
+  }
+  for (const method of ['bkash', 'nagad']) {
+    const input = $(`#payment${method[0].toUpperCase()}${method.slice(1)}`);
+    $(`#${method}Option`).classList.toggle('is-selected', input.checked && !input.disabled);
+  }
+  $('#paymentAmountLabel').textContent = available.length
+    ? `মোট মূল্য: ${moneyBdt(config.priceBdt)} · BDPayHub checkout`
+    : 'bKash / Nagad চালু করতে BDPayHub Variables কনফিগার করুন';
+}
+
 function setPriceUI() {
   const price = moneyBdt(config.priceBdt);
   const duration = `${config.durationMonths} মাসের মেয়াদ`;
@@ -32,11 +60,7 @@ function setPriceUI() {
   $('#featureDuration').textContent = `${config.durationMonths} মাসের অফার`;
   $('#mobileDuration').textContent = duration;
   $('#modalDuration').textContent = duration;
-  if (config.payment?.configured && config.payment.amount && config.payment.currency) {
-    $('#paymentAmountLabel').textContent = `পেমেন্ট: ${config.payment.amount} ${config.payment.currency}`;
-  } else {
-    $('#paymentAmountLabel').textContent = 'Binance Pay সেটআপ সম্পূর্ণ হলে checkout চালু হবে';
-  }
+  updateMethodAvailability();
 }
 
 function setUserUI(user) {
@@ -67,8 +91,7 @@ function showNoticeFromUrl() {
   if (!notice) return;
   const box = $('#notice');
   const messages = {
-    'google-config': 'Google Login চালু করতে .env ফাইলে GOOGLE_CLIENT_ID ও GOOGLE_CLIENT_SECRET যোগ করুন।',
-    'auth-error': 'Google লগইন সম্পন্ন হয়নি। সেটিংস যাচাই করে আবার চেষ্টা করুন।'
+    'auth-error': 'লগইন সম্পন্ন হয়নি। ইমেইল ও পাসওয়ার্ড যাচাই করে আবার চেষ্টা করুন.'
   };
   box.textContent = messages[notice] || 'কিছু একটা সম্পন্ন হয়নি। আবার চেষ্টা করুন।';
   box.hidden = false;
@@ -79,7 +102,7 @@ async function loadConfigAndUser() {
   try {
     const [configResponse, userResponse] = await Promise.all([
       fetch('/api/config', { headers: { Accept: 'application/json' } }),
-      fetch('/api/me', { headers: { Accept: 'application/json' } })
+      fetch('/api/me', { headers: { Accept: 'application/json' }, credentials: 'same-origin' })
     ]);
     if (configResponse.ok) config = { ...config, ...(await configResponse.json()) };
     if (userResponse.ok) {
@@ -94,8 +117,8 @@ async function loadConfigAndUser() {
 
 function openCheckout() {
   if (!currentUser) {
-    showToast('অর্ডার করার আগে Google দিয়ে লগইন করুন।');
-    window.location.href = '/auth/google';
+    showToast('অর্ডার করার আগে ইমেইল ও পাসওয়ার্ড দিয়ে লগইন করুন।');
+    window.location.href = '/auth';
     return;
   }
   $('#deliveryEmail').value = currentUser.email || '';
@@ -110,9 +133,15 @@ async function submitOrder(event) {
   const status = $('#checkoutStatus');
   const whatsapp = $('#whatsapp').value.trim();
   const note = $('#orderNote').value.trim();
+  const paymentMethod = document.querySelector('input[name="paymentMethod"]:checked')?.value || '';
 
   if (!currentUser) {
-    window.location.href = '/auth/google';
+    window.location.href = '/auth';
+    return;
+  }
+  if (!['bkash', 'nagad'].includes(paymentMethod) || !config.payment?.methods?.[paymentMethod]) {
+    status.textContent = 'নির্বাচিত পেমেন্ট পদ্ধতি এখনো চালু করা হয়নি। BDPayHub সেটআপ সম্পন্ন করুন।';
+    status.hidden = false;
     return;
   }
 
@@ -124,20 +153,29 @@ async function submitOrder(event) {
     const response = await fetch('/api/orders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-      body: JSON.stringify({ whatsapp, note })
+      credentials: 'same-origin',
+      body: JSON.stringify({ whatsapp, note, paymentMethod })
     });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.error || 'অর্ডার তৈরি করা যায়নি।');
-    if (!data.checkoutUrl || !data.checkoutUrl.startsWith('https://')) {
-      throw new Error('Binance checkout URL সঠিক নয়।');
-    }
-    window.location.assign(data.checkoutUrl);
+    const checkoutUrl = typeof data.checkoutUrl === 'string' ? data.checkoutUrl : '';
+    if (!checkoutUrl.startsWith('https://')) throw new Error('BDPayHub checkout URL সঠিক নয়।');
+    window.location.assign(checkoutUrl);
   } catch (error) {
     status.textContent = error.message || 'পেমেন্ট শুরু করা যায়নি।';
     status.hidden = false;
     button.disabled = false;
-    button.innerHTML = 'Binance Pay-এ এগিয়ে যান <span>→</span>';
+    button.innerHTML = 'bKash / Nagad-এ এগিয়ে যান <span>→</span>';
   }
+}
+
+for (const method of ['bkash', 'nagad']) {
+  $(`#payment${method[0].toUpperCase()}${method.slice(1)}`).addEventListener('change', () => {
+    for (const item of ['bkash', 'nagad']) {
+      const input = $(`#payment${item[0].toUpperCase()}${item.slice(1)}`);
+      $(`#${item}Option`).classList.toggle('is-selected', input.checked && !input.disabled);
+    }
+  });
 }
 
 $('#buyButton').addEventListener('click', openCheckout);
@@ -149,7 +187,7 @@ $('#cancelCheckout').addEventListener('click', () => $('#checkoutModal').close()
 
 $('#logoutButton').addEventListener('click', async () => {
   try {
-    await fetch('/auth/logout', { method: 'POST' });
+    await fetch('/auth/logout', { method: 'POST', credentials: 'same-origin' });
   } finally {
     setUserUI(null);
     showToast('আপনি লগআউট করেছেন।');

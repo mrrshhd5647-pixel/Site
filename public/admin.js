@@ -39,7 +39,9 @@ async function loadOrders() {
       const amount = order.payment_amount && order.payment_currency
         ? `${order.payment_amount} ${order.payment_currency}`
         : '—';
-      card.append(text('div', 'order-meta', `WhatsApp: ${order.whatsapp} · Display price: ৳${order.price_bdt} · Payment: ${amount}`));
+      const method = ({ bkash: 'bKash', nagad: 'Nagad', legacy: 'পুরোনো অর্ডার' })[order.payment_method] || '—';
+      card.append(text('div', 'order-meta', `WhatsApp: ${order.whatsapp} · Display price: ৳${order.price_bdt} · Method: ${method} · Payment: ${amount}`));
+      if (order.payment_verification_source) card.append(text('div', 'order-meta', `Verification: ${order.payment_verification_source}`));
       card.append(text('div', 'order-meta', `Created: ${new Date(order.created_at).toLocaleString()}${order.paid_at ? ` · Paid: ${new Date(order.paid_at).toLocaleString()}` : ''}`));
       if (order.note) card.append(text('div', 'order-note', `Note: ${order.note}`));
       const actions = text('div', 'order-actions', '');

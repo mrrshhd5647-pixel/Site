@@ -10,7 +10,7 @@
   <script src="/app.js" defer></script>
 </head>
 <body>
-  <div class="announcement">⚡ ডিজিটাল সাবস্ক্রিপশন · দ্রুত অর্ডার প্রসেসিং · Binance Pay</div>
+  <div class="announcement">⚡ ডিজিটাল সাবস্ক্রিপশন · bKash ও Nagad · BDPayHub checkout</div>
   <header class="site-header">
     <a class="brand" href="/" aria-label="ARS Store home">
       <span class="brand-mark">ARS</span>
@@ -22,7 +22,7 @@
       <a href="#support">সাপোর্ট</a>
     </nav>
     <div class="header-actions">
-      <a id="loginButton" class="button button-light button-small" href="/auth/google"><span class="google-g">G</span> Google দিয়ে লগইন</a>
+      <a id="loginButton" class="button button-light button-small" href="/auth">ইমেইল দিয়ে লগইন</a>
       <div id="accountArea" class="account-area" hidden>
         <img id="userAvatar" class="avatar" alt="" hidden>
         <span id="userName" class="account-name"></span>
@@ -64,11 +64,11 @@
               <span class="eyebrow">মূল্য / PRICE</span>
               <div class="price"><span id="price">৳350</span> <del id="oldPrice">৳1,500</del></div>
             </div>
-            <span class="badge badge-green">⚡ Binance Pay</span>
+            <span class="badge badge-green">⚡ bKash / Nagad</span>
           </div>
-          <p class="checkout-note">পেমেন্ট Binance-এর নিরাপদ checkout পেজে সম্পন্ন হবে।</p>
+          <p class="checkout-note">পেমেন্ট BDPayHub checkout-এ bKash অথবা Nagad দিয়ে সম্পন্ন করুন।</p>
           <button class="button button-primary buy-button" id="buyButton" type="button">
-            <span class="bag-icon">▣</span> অর্ডার করুন — Binance Pay <span class="button-arrow">→</span>
+            <span class="bag-icon">▣</span> অর্ডার করুন — bKash / Nagad <span class="button-arrow">→</span>
           </button>
           <button class="button button-outline buy-button" id="mobileBuyTop" type="button">
             <span class="chat-icon">◌</span> অর্ডার / প্রশ্ন
@@ -102,7 +102,7 @@
         </div>
         <div class="trust-item">
           <span class="trust-emoji">🛡️</span>
-          <div><strong>Verified payment flow</strong><p>পেমেন্ট কনফার্মেশন Binance-এর signed webhook দিয়ে যাচাই করা হয়।</p></div>
+          <div><strong>Verified payment flow</strong><p>পেমেন্টের অবস্থা BDPayHub-এর signed webhook ও receipt matching দিয়ে যাচাই হবে।</p></div>
         </div>
         <div class="trust-item">
           <span class="trust-emoji">💬</span>
@@ -119,9 +119,9 @@
     <section class="how-card">
       <h2>কীভাবে অর্ডার করবেন?</h2>
       <div class="steps">
-        <div class="step"><span>1</span><div><strong>Google দিয়ে লগইন</strong><p>আপনার verified email ব্যবহার করুন।</p></div></div>
+        <div class="step"><span>1</span><div><strong>ইমেইল দিয়ে লগইন</strong><p>আপনার ARS Store ইমেইল ও পাসওয়ার্ড ব্যবহার করুন।</p></div></div>
         <div class="step"><span>2</span><div><strong>নম্বর দিন</strong><p>WhatsApp / মোবাইল নম্বর দিয়ে checkout শুরু করুন।</p></div></div>
-        <div class="step"><span>3</span><div><strong>Binance Pay</strong><p>Binance checkout-এ পেমেন্ট সম্পন্ন করুন।</p></div></div>
+        <div class="step"><span>3</span><div><strong>bKash / Nagad</strong><p>BDPayHub checkout-এ নির্বাচিত পদ্ধতিতে পেমেন্ট সম্পন্ন করুন।</p></div></div>
         <div class="step"><span>4</span><div><strong>অর্ডার যাচাই</strong><p>পেমেন্ট নিশ্চিত হলে ARS Store অর্ডার প্রসেস করবে।</p></div></div>
       </div>
     </section>
@@ -149,17 +149,31 @@
         <div><strong>Gemini AI Pro</strong><small id="modalDuration">18 মাসের মেয়াদ</small></div>
         <strong id="modalPrice">৳350</strong>
       </div>
-      <div class="payment-method"><span class="binance-mark">B</span><span><strong>Binance Pay</strong><small id="paymentAmountLabel">Binance checkout-এ পেমেন্ট করুন</small></span><span class="selected-check">✓</span></div>
-      <label for="deliveryEmail">আপনার Google / Delivery Email</label>
+      <div class="payment-options" role="radiogroup" aria-label="পেমেন্ট পদ্ধতি">
+        <label id="bkashOption" class="payment-option is-selected">
+          <input id="paymentBkash" type="radio" name="paymentMethod" value="bkash" checked>
+          <span class="wallet-mark wallet-bkash">b</span>
+          <span class="payment-option-copy"><strong>bKash</strong><small id="bkashStatus">BDPayHub checkout</small></span>
+          <span class="selected-check" aria-hidden="true">✓</span>
+        </label>
+        <label id="nagadOption" class="payment-option">
+          <input id="paymentNagad" type="radio" name="paymentMethod" value="nagad">
+          <span class="wallet-mark wallet-nagad">N</span>
+          <span class="payment-option-copy"><strong>Nagad</strong><small id="nagadStatus">BDPayHub checkout</small></span>
+          <span class="selected-check" aria-hidden="true">✓</span>
+        </label>
+      </div>
+      <p id="paymentAmountLabel" class="field-help">মোট মূল্য: ৳350 · BDPayHub checkout</p>
+      <label for="deliveryEmail">আপনার Delivery Email</label>
       <input id="deliveryEmail" type="email" readonly>
-      <p class="field-help">Google লগইন থেকে নেওয়া email। আপনার Google password চাওয়া হবে না।</p>
+      <p class="field-help">আপনার ARS Store অ্যাকাউন্টের ইমেইল। অন্য কোনো অ্যাকাউন্টের পাসওয়ার্ড দেবেন না।</p>
       <label for="whatsapp">WhatsApp / মোবাইল নম্বর <span class="required">*</span></label>
       <input id="whatsapp" name="whatsapp" type="tel" autocomplete="tel" placeholder="যেমন: +8801XXXXXXXXX" required minlength="8" maxlength="24">
       <label for="orderNote">বিশেষ নির্দেশনা (ঐচ্ছিক)</label>
       <textarea id="orderNote" name="note" rows="2" maxlength="500" placeholder="অর্ডার সম্পর্কে কোনো নোট থাকলে লিখুন"></textarea>
       <p class="terms-note">অর্ডার করে আপনি নিশ্চিত করছেন যে পণ্যের বিবরণ ও শর্ত পড়েছেন। সাবস্ক্রিপশন অ্যাক্টিভেশন বিক্রেতার বৈধ সরবরাহ ও প্ল্যানের নিয়মের ওপর নির্ভর করে।</p>
       <p id="checkoutStatus" class="form-status" role="status" hidden></p>
-      <button id="payButton" class="button button-primary modal-submit" type="submit">Binance Pay-এ এগিয়ে যান <span>→</span></button>
+      <button id="payButton" class="button button-primary modal-submit" type="submit">bKash / Nagad-এ এগিয়ে যান <span>→</span></button>
       <button id="cancelCheckout" class="text-button cancel-link" type="button">বাতিল</button>
     </form>
   </dialog>

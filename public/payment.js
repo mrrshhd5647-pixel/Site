@@ -25,7 +25,7 @@ async function refreshStatus() {
     const response = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, { headers: { Accept: 'application/json' } });
     const data = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setStatus('UNKNOWN', data.error || 'অর্ডারের তথ্য পড়া যায়নি। Google দিয়ে একই account-এ লগইন করা আছে কি না দেখুন।', 'স্ট্যাটাস দেখা যাচ্ছে না', '!');
+      setStatus('UNKNOWN', data.error || 'অর্ডারের তথ্য পড়া যায়নি। একই ARS Store account-এ লগইন করা আছে কি না দেখুন।', 'স্ট্যাটাস দেখা যাচ্ছে না', '!');
       return;
     }
     const order = data.order;
@@ -36,12 +36,12 @@ async function refreshStatus() {
       setStatus('PAID · ACTIVATION PENDING', 'পেমেন্ট নিশ্চিত হয়েছে। ARS Store এখন অর্ডারটি প্রসেস করবে।', 'পেমেন্ট নিশ্চিত', '✓');
       clearTimeout(pollTimer);
     } else if (order.status === 'failed') {
-      setStatus('PAYMENT NOT CREATED', 'Binance Pay অর্ডার তৈরি হয়নি। স্টোরে ফিরে গিয়ে আবার চেষ্টা করুন।', 'পেমেন্ট শুরু হয়নি', '!');
+      setStatus('PAYMENT NOT CREATED', 'BDPayHub checkout তৈরি হয়নি। স্টোরে ফিরে গিয়ে gateway settings যাচাই করুন।', 'পেমেন্ট শুরু হয়নি', '!');
       clearTimeout(pollTimer);
     } else if (isCancelPage) {
       setStatus('PENDING', 'Checkout থেকে ফিরে এসেছেন। পেমেন্ট সম্পন্ন না হলে অর্ডার pending থাকবে। পেমেন্ট হয়ে থাকলে webhook আসা পর্যন্ত অপেক্ষা করুন।', 'পেমেন্ট এখনো নিশ্চিত নয়', '◷');
     } else {
-      setStatus('PENDING', 'Binance Pay-এর verified notification আসার অপেক্ষায়। কয়েক সেকেন্ড পরে আবার যাচাই করা হবে।', 'অর্ডার যাচাই হচ্ছে', '◷');
+      setStatus('PENDING', 'BDPayHub-এর signed notification আসার অপেক্ষায়। কয়েক সেকেন্ড পরে আবার যাচাই করা হবে।', 'অর্ডার যাচাই হচ্ছে', '◷');
     }
   } catch {
     setStatus('UNKNOWN', 'নেটওয়ার্ক সমস্যা। আবার চেষ্টা করুন।', 'স্ট্যাটাস পড়া যায়নি', '!');
